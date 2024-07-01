@@ -1,8 +1,33 @@
+0.26.0 (2024-07-01)
+===
+
+## What's Changed
+* Rename edge to slot by @wks in https://github.com/mmtk/mmtk-openjdk/pull/274
+* Fix deadlock related to safepoint sync. by @wks in https://github.com/mmtk/mmtk-openjdk/pull/279
+* Add option to put forwarding bits on the side by @wks in https://github.com/mmtk/mmtk-openjdk/pull/277
+
+**Full Changelog**: https://github.com/mmtk/mmtk-openjdk/compare/v0.25.0...v0.26.0
+
+0.25.0 (2024-05-17)
+===
+
+## What's Changed
+* Update mmtk-core to v0.25.0.
+* Remove the coordinator thread by @wks in https://github.com/mmtk/mmtk-openjdk/pull/268
+* Use to_address for SFT access by @wks in https://github.com/mmtk/mmtk-openjdk/pull/272
+* Remove NULL ObjectReference by @wks in https://github.com/mmtk/mmtk-openjdk/pull/265
+* Fix write barrier parameter type by @wks in https://github.com/mmtk/mmtk-openjdk/pull/273
+
+**Full Changelog**: https://github.com/mmtk/mmtk-openjdk/compare/v0.24.0...v0.25.0
+
 0.24.0 (2024-04-08)
 ===
 
+## What's Changed
 * Update mmtk-core to v0.24.0.
 * Update Rust toolchain to 1.77.0.
+
+**Full Changelog**: https://github.com/mmtk/mmtk-openjdk/compare/v0.23.0...v0.24.0
 
 0.23.0 (2024-02-09)
 ===

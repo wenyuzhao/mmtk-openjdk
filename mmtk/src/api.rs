@@ -1,4 +1,4 @@
-use crate::edges::OpenJDKEdge;
+use crate::slots::OpenJDKSlot;
 use crate::OpenJDK;
 use crate::OpenJDK_Upcalls;
 use crate::BUILDER;
@@ -8,6 +8,7 @@ use mmtk::memory_manager;
 use mmtk::plan::BarrierSelector;
 use mmtk::scheduler::GCWorker;
 use mmtk::util::alloc::AllocatorSelector;
+use mmtk::util::api_util::NullableObjectReference;
 use mmtk::util::opaque_pointer::*;
 use mmtk::util::{Address, ObjectReference};
 use mmtk::AllocationSemantics;
@@ -198,7 +199,11 @@ pub extern "C" fn post_alloc(
 
 #[no_mangle]
 pub extern "C" fn will_never_move(object: ObjectReference) -> bool {
-    !object.is_movable()
+    if crate::use_compressed_oops() {
+        !object.is_movable::<OpenJDK<true>>()
+    } else {
+        !object.is_movable::<OpenJDK<false>>()
+    }
 }
 
 #[no_mangle]
@@ -249,7 +254,7 @@ pub extern "C" fn handle_user_collection_request(tls: VMMutatorThread) {
 
 #[no_mangle]
 pub extern "C" fn mmtk_enable_compressed_oops() {
-    crate::edges::enable_compressed_oops()
+    crate::slots::enable_compressed_oops()
 }
 
 #[no_mangle]
@@ -361,13 +366,13 @@ pub extern "C" fn process_bulk(options: *const c_char) -> bool {
 #[no_mangle]
 pub extern "C" fn mmtk_narrow_oop_base() -> Address {
     debug_assert!(crate::use_compressed_oops());
-    crate::edges::BASE.load(Ordering::Relaxed)
+    crate::slots::BASE.load(Ordering::Relaxed)
 }
 
 #[no_mangle]
 pub extern "C" fn mmtk_narrow_oop_shift() -> usize {
     debug_assert!(crate::use_compressed_oops());
-    crate::edges::SHIFT.load(Ordering::Relaxed)
+    crate::slots::SHIFT.load(Ordering::Relaxed)
 }
 
 #[no_mangle]
@@ -396,12 +401,12 @@ pub extern "C" fn mmtk_object_reference_write_pre(
     mutator: *mut libc::c_void,
     src: ObjectReference,
     slot: Address,
-    target: ObjectReference,
+    target: NullableObjectReference,
 ) {
     with_mutator!(|mutator| {
         mutator
             .barrier()
-            .object_reference_write_pre(src, slot.into(), target);
+            .object_reference_write_pre(src, slot.into(), target.into());
     })
 }
 
@@ -411,12 +416,12 @@ pub extern "C" fn mmtk_object_reference_write_post(
     mutator: *mut libc::c_void,
     src: ObjectReference,
     slot: Address,
-    target: ObjectReference,
+    target: NullableObjectReference,
 ) {
     with_mutator!(|mutator| {
         mutator
             .barrier()
-            .object_reference_write_post(src, slot.into(), target);
+            .object_reference_write_post(src, slot.into(), target.into());
     })
 }
 
@@ -426,20 +431,20 @@ pub extern "C" fn mmtk_object_reference_write_slow(
     mutator: *mut libc::c_void,
     src: ObjectReference,
     slot: Address,
-    target: ObjectReference,
+    target: NullableObjectReference,
 ) {
     with_mutator!(|mutator| {
         mutator
             .barrier()
-            .object_reference_write_slow(src, slot.into(), target);
+            .object_reference_write_slow(src, slot.into(), target.into());
     })
 }
 
-fn log_bytes_in_edge() -> usize {
+fn log_bytes_in_slot() -> usize {
     if crate::use_compressed_oops() {
-        OpenJDKEdge::<true>::LOG_BYTES_IN_EDGE
+        OpenJDKSlot::<true>::LOG_BYTES_IN_SLOT
     } else {
-        OpenJDKEdge::<false>::LOG_BYTES_IN_EDGE
+        OpenJDKSlot::<false>::LOG_BYTES_IN_SLOT
     }
 }
 
@@ -451,7 +456,7 @@ pub extern "C" fn mmtk_array_copy_pre(
     dst: Address,
     count: usize,
 ) {
-    let bytes = count << log_bytes_in_edge();
+    let bytes = count << log_bytes_in_slot();
     with_mutator!(|mutator| {
         mutator
             .barrier()
@@ -468,7 +473,7 @@ pub extern "C" fn mmtk_array_copy_post(
     count: usize,
 ) {
     with_mutator!(|mutator| {
-        let bytes = count << log_bytes_in_edge();
+        let bytes = count << log_bytes_in_slot();
         mutator
             .barrier()
             .memory_region_copy_post((src..src + bytes).into(), (dst..dst + bytes).into());
@@ -488,13 +493,8 @@ pub extern "C" fn add_finalizer(object: ObjectReference) {
 }
 
 #[no_mangle]
-pub extern "C" fn get_finalized_object() -> ObjectReference {
-    with_singleton!(|singleton| {
-        match memory_manager::get_finalized_object(singleton) {
-            Some(obj) => obj,
-            None => ObjectReference::NULL,
-        }
-    })
+pub extern "C" fn get_finalized_object() -> NullableObjectReference {
+    with_singleton!(|singleton| memory_manager::get_finalized_object(singleton).into())
 }
 
 thread_local! {
