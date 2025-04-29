@@ -59,9 +59,12 @@ class MMTkHeap : public CollectedHeap {
   ContiguousSpace* _space;
   int _num_root_scan_tasks;
   MMTkVMCompanionThread* _companion_thread;
+  WorkGang* _workers;
 public:
 
   MMTkHeap(MMTkCollectorPolicy* policy);
+
+  WorkGang* workers() const { return _workers; }
 
   void schedule_finalizer();
 
@@ -71,10 +74,10 @@ public:
 
   static HeapWord* allocate_from_tlab(Klass* klass, Thread* thread, size_t size);
 
-  jint initialize();
-  void enable_collection();
+  virtual jint initialize() override;
+  virtual void enable_collection() override;
 
-  virtual HeapWord* mem_allocate(size_t size, bool* gc_overhead_limit_was_exceeded);
+  virtual HeapWord* mem_allocate(size_t size, bool* gc_overhead_limit_was_exceeded) override;
   HeapWord* mem_allocate_nonmove(size_t size, bool* gc_overhead_limit_was_exceeded);
 
   MMTkVMCompanionThread* companion_thread() const {
@@ -82,33 +85,33 @@ public:
   }
 
 
-  Name kind() const {
+  virtual Name kind() const override {
     return CollectedHeap::ThirdPartyHeap;
   }
-  const char* name() const {
+  virtual const char* name() const override {
     return "MMTk";
   }
   static const char* version();
 
-  size_t capacity() const;
-  size_t used() const;
+  virtual size_t capacity() const override;
+  virtual size_t used() const override;
 
-  bool is_maximal_no_gc() const;
+  virtual bool is_maximal_no_gc() const override;
 
-  size_t max_capacity() const;
-  bool is_in(const void* p) const;
-  bool is_in_reserved(const void* p) const;
-  bool supports_tlab_allocation() const;
+  virtual size_t max_capacity() const override;
+  virtual bool is_in(const void* p) const override;
+  virtual bool is_in_reserved(const void* p) const override;
+  virtual bool supports_tlab_allocation() const override;
 
-  bool supports_inline_contig_alloc() const {
+  virtual bool supports_inline_contig_alloc() const override {
     return MMTK_ENABLE_ALLOCATION_FASTPATH;
   }
 
   // The amount of space available for thread-local allocation buffers.
-  size_t tlab_capacity(Thread *thr) const;
+  virtual size_t tlab_capacity(Thread *thr) const override;
 
   // The amount of used space for thread-local allocation buffers for the given thread.
-  size_t tlab_used(Thread *thr) const;
+  virtual size_t tlab_used(Thread *thr) const override;
 
   void new_collector_thread() {
     _n_workers += 1;
@@ -126,74 +129,77 @@ public:
   // mark to be thus strictly sequenced after the stores.
   bool card_mark_must_follow_store() const;
 
-  void collect(GCCause::Cause cause);
+  virtual void collect(GCCause::Cause cause) override;
 
   // Perform a full collection
-  void do_full_collection(bool clear_all_soft_refs);
+  virtual void do_full_collection(bool clear_all_soft_refs) override;
+
+  virtual void collect_as_vm_thread(GCCause::Cause cause) override;
 
 
   // Return the CollectorPolicy for the heap
-  CollectorPolicy* collector_policy() const ;
+  virtual CollectorPolicy* collector_policy() const override;
 
-  SoftRefPolicy* soft_ref_policy();
+  virtual SoftRefPolicy* soft_ref_policy() override;
 
-  GrowableArray<GCMemoryManager*> memory_managers() ;
-  GrowableArray<MemoryPool*> memory_pools();
+  virtual GrowableArray<GCMemoryManager*> memory_managers() override;
+  virtual GrowableArray<MemoryPool*> memory_pools() override;
 
   // Iterate over all objects, calling "cl.do_object" on each.
   void object_iterate(ObjectClosure* cl);
 
   // Similar to object_iterate() except iterates only
   // over live objects.
-  void safe_object_iterate(ObjectClosure* cl) ;
+  virtual void safe_object_iterate(ObjectClosure* cl) override;
 
-  HeapWord* block_start(const void* addr) const ;
+  virtual HeapWord* block_start(const void* addr) const override;
 
-  size_t block_size(const HeapWord* addr) const ;
+  virtual size_t block_size(const HeapWord* addr) const override;
 
-  bool block_is_obj(const HeapWord* addr) const;
+  virtual bool block_is_obj(const HeapWord* addr) const override;
 
-  jlong millis_since_last_gc() ;
+  virtual jlong millis_since_last_gc() override;
 
-  void prepare_for_verify() ;
+  virtual void prepare_for_verify() override;
 
+  virtual void register_new_weak_handle(oop* handle) override;
 
 private:
 
-  void initialize_serviceability() ;
+  virtual void initialize_serviceability() override;
 
   void set_mmtk_options(bool set_defaults);
 
 public:
 
   // Print heap information on the given outputStream.
-  void print_on(outputStream* st) const ;
+  virtual void print_on(outputStream* st) const override;
 
 
   // Print all GC threads (other than the VM thread)
   // used by this heap.
-  void print_gc_threads_on(outputStream* st) const;
+  virtual void print_gc_threads_on(outputStream* st) const override;
 
   // Iterator for all GC threads (other than VM thread)
-  void gc_threads_do(ThreadClosure* tc) const;
+  virtual void gc_threads_do(ThreadClosure* tc) const override;
 
   // Print any relevant tracing info that flags imply.
   // Default implementation does nothing.
-  void print_tracing_info() const ;
+  virtual void print_tracing_info() const override;
 
 
   // An object is scavengable if its location may move during a scavenge.
   // (A scavenge is a GC which is not a full GC.)
-  inline bool is_scavengable(oop obj) { return true; }
+  virtual inline bool is_scavengable(oop obj) override { return true; }
   // Registering and unregistering an nmethod (compiled code) with the heap.
   // Override with specific mechanism for each specialized heap type.
-  virtual void register_nmethod(nmethod* nm);
-  virtual void unregister_nmethod(nmethod* nm);
+  virtual void register_nmethod(nmethod* nm) override;
+  virtual void unregister_nmethod(nmethod* nm) override;
 
   // Heap verification
-  void verify(VerifyOption option);
+  virtual void verify(VerifyOption option) override;
 
-  void post_initialize();
+  virtual void post_initialize() override;
 
   void scan_roots(OopClosure& cl);
 
@@ -208,9 +214,11 @@ public:
   void scan_system_dictionary_roots(OopClosure& cl);
   void scan_code_cache_roots(OopClosure& cl);
   void scan_string_table_roots(OopClosure& cl);
-  void scan_class_loader_data_graph_roots(OopClosure& cl);
+  void scan_class_loader_data_graph_roots(OopClosure& cl, OopClosure& weak_cl, bool scan_all_strong_roots);
   void scan_weak_processor_roots(OopClosure& cl);
   void scan_vm_thread_roots(OopClosure& cl);
+
+  void complete_cleaning(BoolObjectClosure* is_alive, OopClosure* forward, bool class_unloading_occurred);
 
   jlong _last_gc_time;
 };

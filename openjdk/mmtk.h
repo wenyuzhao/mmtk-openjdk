@@ -106,6 +106,9 @@ extern void handle_user_collection_request(void *tls);
 extern void start_control_collector(void *tls, void *context);
 extern void start_worker(void *tls, void* worker);
 
+extern size_t mmtk_is_live(void* object);
+extern void* mmtk_get_forwarded_ref(void* object);
+
 extern size_t mmtk_add_nmethod_oop(void* object);
 extern size_t mmtk_register_nmethod(void* nm);
 extern size_t mmtk_unregister_nmethod(void* nm);
@@ -143,13 +146,13 @@ struct SlotsClosure {
  * OpenJDK-specific
  */
 typedef struct {
-    void (*stop_all_mutators) (void *tls, MutatorClosure closure);
+    void (*stop_all_mutators) (void *tls, MutatorClosure closure, bool current_gc_should_unload_classes);
     void (*resume_mutators) (void *tls);
     void (*spawn_gc_thread) (void *tls, int kind, void *ctx);
     void (*block_for_gc) ();
     void (*out_of_memory) (void *tls, MMTkAllocationError err_kind);
     void (*get_mutators) (MutatorClosure closure);
-    void (*scan_object) (void* trace, void* object, void* tls);
+    void (*scan_object) (void* trace, void* object, void* tls, bool follow_clds, bool claim_clds);
     void (*dump_object) (void* object);
     size_t (*get_object_size) (void* object);
     void* (*get_mmtk_mutator) (void* tls);
@@ -173,13 +176,17 @@ typedef struct {
     void (*scan_system_dictionary_roots) (SlotsClosure closure);
     void (*scan_code_cache_roots) (SlotsClosure closure);
     void (*scan_string_table_roots) (SlotsClosure closure);
-    void (*scan_class_loader_data_graph_roots) (SlotsClosure closure);
+    void (*scan_class_loader_data_graph_roots) (SlotsClosure closure, SlotsClosure weak_closure, bool scan_weak);
     void (*scan_weak_processor_roots) (SlotsClosure closure);
     void (*scan_vm_thread_roots) (SlotsClosure closure);
     size_t (*number_of_mutators)();
     void (*schedule_finalizer)();
     void (*prepare_for_roots_re_scanning)();
     void (*enqueue_references)(void** objects, size_t len);
+    size_t (*java_lang_class_klass_offset_in_bytes)();
+    size_t (*java_lang_classloader_loader_data_offset)();
+    void (*unload_classes)();
+    void (*gc_epilogue)();
 } OpenJDK_Upcalls;
 
 extern void openjdk_gc_init(OpenJDK_Upcalls *calls);

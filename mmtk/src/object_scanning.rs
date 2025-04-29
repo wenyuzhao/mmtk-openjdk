@@ -2,6 +2,7 @@ use crate::OpenJDKSlot;
 
 use super::abi::*;
 use super::UPCALLS;
+use crate::Slot;
 use mmtk::util::opaque_pointer::*;
 use mmtk::util::{Address, ObjectReference};
 use mmtk::vm::SlotVisitor;
@@ -39,6 +40,8 @@ impl OopIterate for InstanceKlass {
         oop: Oop,
         closure: &mut impl SlotVisitor<S<COMPRESSED>>,
     ) {
+        do_klass::<_, COMPRESSED>(oop.klass::<COMPRESSED>(), closure);
+
         let oop_maps = self.nonstatic_oop_maps();
         for map in oop_maps {
             map.oop_iterate::<COMPRESSED>(oop, closure)
@@ -53,6 +56,20 @@ impl OopIterate for InstanceMirrorKlass {
         closure: &mut impl SlotVisitor<S<COMPRESSED>>,
     ) {
         self.instance_klass.oop_iterate::<COMPRESSED>(oop, closure);
+
+        let klass = unsafe {
+            (oop.start() + *crate::JAVA_LANG_CLASS_KLASS_OFFSET_IN_BYTES).load::<*mut Klass>()
+        };
+        if !klass.is_null() {
+            let klass = unsafe { &mut *klass };
+            if klass.is_instance_klass()
+                && (unsafe { klass.cast::<InstanceKlass>().is_anonymous() })
+            {
+                do_cld::<_, COMPRESSED>(&klass.class_loader_data, closure)
+            } else {
+                do_klass::<_, COMPRESSED>(klass, closure)
+            }
+        }
 
         // static fields
         let start = Self::start_of_static_fields(oop);
@@ -80,6 +97,14 @@ impl OopIterate for InstanceClassLoaderKlass {
         closure: &mut impl SlotVisitor<S<COMPRESSED>>,
     ) {
         self.instance_klass.oop_iterate::<COMPRESSED>(oop, closure);
+
+        let cld = unsafe {
+            (oop.start() + *crate::JAVA_LANG_CLASSLOADER_LOADER_DATA_OFFSET)
+                .load::<*mut ClassLoaderData>()
+        };
+        if !cld.is_null() {
+            do_cld::<_, COMPRESSED>(unsafe { &*cld }, closure);
+        }
     }
 }
 
@@ -89,6 +114,8 @@ impl OopIterate for ObjArrayKlass {
         oop: Oop,
         closure: &mut impl SlotVisitor<S<COMPRESSED>>,
     ) {
+        do_klass::<_, COMPRESSED>(oop.klass::<COMPRESSED>(), closure);
+
         let array = unsafe { oop.as_array_oop() };
         if COMPRESSED {
             for narrow_oop in unsafe { array.data::<NarrowOop, COMPRESSED>(BasicType::T_OBJECT) } {
@@ -175,6 +202,8 @@ fn oop_iterate_slow<const COMPRESSED: bool, V: SlotVisitor<S<COMPRESSED>>>(
             ),
             mem::transmute::<&OopDesc, ObjectReference>(oop),
             tls,
+            true,
+            true,
         );
     }
 }
@@ -182,7 +211,7 @@ fn oop_iterate_slow<const COMPRESSED: bool, V: SlotVisitor<S<COMPRESSED>>>(
 fn oop_iterate<const COMPRESSED: bool>(oop: Oop, closure: &mut impl SlotVisitor<S<COMPRESSED>>) {
     let klass = oop.klass::<COMPRESSED>();
     let klass_id = klass.id;
-    assert!(
+    debug_assert!(
         klass_id as i32 >= 0 && (klass_id as i32) < 6,
         "Invalid klass-id: {:x} for oop: {:x}",
         klass_id as i32,
@@ -213,6 +242,17 @@ fn oop_iterate<const COMPRESSED: bool>(oop: Oop, closure: &mut impl SlotVisitor<
             instance_klass.oop_iterate::<COMPRESSED>(oop, closure);
         }
     }
+}
+
+fn do_cld<V: SlotVisitor<S<COMPRESSED>>, const COMPRESSED: bool>(
+    cld: &ClassLoaderData,
+    closure: &mut V,
+) {
+    cld.oops_do::<_, COMPRESSED>(closure)
+}
+
+fn do_klass<V: SlotVisitor<S<COMPRESSED>>, const COMPRESSED: bool>(klass: &Klass, closure: &mut V) {
+    do_cld::<_, COMPRESSED>(&klass.class_loader_data, closure)
 }
 
 thread_local! {

@@ -1,13 +1,17 @@
 use super::UPCALLS;
 use crate::OpenJDKSlot;
+use crate::Slot;
 use atomic::Atomic;
 use atomic::Ordering;
 use mmtk::util::constants::*;
 use mmtk::util::conversions;
 use mmtk::util::ObjectReference;
 use mmtk::util::{Address, OpaquePointer};
+use mmtk::vm::SlotVisitor;
 use std::ffi::CStr;
 use std::fmt;
+use std::sync::atomic::AtomicPtr;
+use std::sync::atomic::AtomicU32;
 use std::sync::atomic::AtomicUsize;
 use std::{mem, slice};
 
@@ -75,7 +79,7 @@ pub struct Klass {
     pub subklass: &'static Klass,
     pub next_sibling: &'static Klass,
     pub next_link: &'static Klass,
-    pub class_loader_data: OpaquePointer, // ClassLoaderData*
+    pub class_loader_data: &'static ClassLoaderData,
     pub modifier_flags: i32,
     pub access_flags: i32, // AccessFlags
     pub trace_id: u64,     // JFR_ONLY(traceid _trace_id;)
@@ -108,6 +112,10 @@ impl Klass {
     /// Get array header size
     const fn layout_helper_header_size(lh: i32) -> i32 {
         (lh >> Self::LH_HEADER_SIZE_SHIFT) & Self::LH_HEADER_SIZE_MASK
+    }
+
+    pub const fn is_instance_klass(&self) -> bool {
+        self.layout_helper > Self::LH_NEUTRAL_VALUE
     }
 }
 
@@ -167,7 +175,7 @@ pub struct InstanceKlass {
 }
 
 #[repr(u8)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[allow(dead_code)]
 pub enum ReferenceType {
     None,    // Regular class
@@ -181,6 +189,7 @@ pub enum ReferenceType {
 impl InstanceKlass {
     const HEADER_SIZE: usize = mem::size_of::<Self>() / BYTES_IN_WORD;
     const VTABLE_START_OFFSET: usize = Self::HEADER_SIZE * BYTES_IN_WORD;
+    const MISC_IS_ANONYMOUS: u16 = 1 << 5;
 
     fn start_of_vtable(&self) -> *const usize {
         (Address::from_ref(self) + Self::VTABLE_START_OFFSET).to_ptr()
@@ -202,6 +211,10 @@ impl InstanceKlass {
         let start = unsafe { start_of_itable.add(self.itable_len as _) as *const OopMapBlock };
         let count = self.nonstatic_oop_map_count();
         unsafe { slice::from_raw_parts(start, count) }
+    }
+
+    pub fn is_anonymous(&self) -> bool {
+        self.misc_flags & Self::MISC_IS_ANONYMOUS != 0
     }
 }
 
@@ -313,6 +326,17 @@ pub fn set_compressed_klass_base_and_shift(base: Address, shift: usize) {
 impl OopDesc {
     pub fn start(&self) -> Address {
         unsafe { mem::transmute(self) }
+    }
+
+    pub(crate) fn klass_ptr<const COMPRESSED: bool>(&self) -> Address {
+        if COMPRESSED {
+            let compressed = unsafe { self.klass.narrow_klass };
+            let addr = COMPRESSED_KLASS_BASE.load(Ordering::Relaxed)
+                + ((compressed as usize) << COMPRESSED_KLASS_SHIFT.load(Ordering::Relaxed));
+            addr
+        } else {
+            unsafe { Address::from_ref(self.klass.klass) }
+        }
     }
 
     pub fn klass<const COMPRESSED: bool>(&self) -> &'static Klass {
@@ -442,7 +466,7 @@ impl ArrayOopDesc {
             typesize_in_bytes / BYTES_IN_WORD
         }
     }
-    fn length<const COMPRESSED: bool>(&self) -> i32 {
+    pub fn length<const COMPRESSED: bool>(&self) -> i32 {
         unsafe { (Address::from_ref(self) + Self::length_offset::<COMPRESSED>()).load::<i32>() }
     }
     fn base<const COMPRESSED: bool>(&self, ty: BasicType) -> Address {
@@ -491,4 +515,100 @@ pub fn validate_memory_layouts() {
             ^ mem::size_of::<ObjArrayKlass>()
     };
     assert_eq!(vm_checksum, binding_checksum);
+}
+
+#[repr(C)]
+#[derive(Debug)]
+struct Chunk {
+    #[cfg(debug_assertions)]
+    vptr: OpaquePointer,
+    data: [*mut OopDesc; 32],
+    size: AtomicU32,
+    next: *mut Chunk,
+}
+
+#[repr(C)]
+#[derive(Debug)]
+struct ChunkedHandleList {
+    head: AtomicPtr<Chunk>,
+}
+
+impl ChunkedHandleList {
+    unsafe fn oops_do_chunk<V: SlotVisitor<OpenJDKSlot<COMPRESSED>>, const COMPRESSED: bool>(
+        &self,
+        chunk: &'static Chunk,
+        size: u32,
+        closure: &mut V,
+    ) {
+        for i in 0..size {
+            if !chunk.data[i as usize].is_null() {
+                let mut word =
+                    Address::from_ref::<*mut OopDesc>(&chunk.data[i as usize]).as_usize();
+                if COMPRESSED {
+                    word = word | (1usize << 63);
+                }
+                closure.visit_slot(OpenJDKSlot::<COMPRESSED>::from_address(
+                    Address::from_usize(word),
+                ))
+            }
+        }
+    }
+
+    fn oops_do<V: SlotVisitor<OpenJDKSlot<COMPRESSED>>, const COMPRESSED: bool>(
+        &self,
+        closure: &mut V,
+    ) {
+        let head = self.head.load(Ordering::Acquire);
+        if !head.is_null() {
+            let head = unsafe { &*head };
+            let size = head.size.load(Ordering::Acquire);
+            unsafe { self.oops_do_chunk::<_, COMPRESSED>(head, size, closure) };
+            let mut c = head.next;
+            while !c.is_null() {
+                let chunk = unsafe { &*c };
+                let size = chunk.size.load(Ordering::Relaxed);
+                unsafe { self.oops_do_chunk::<_, COMPRESSED>(chunk, size, closure) };
+                c = chunk.next;
+            }
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Debug)]
+pub struct ClassLoaderData {
+    #[cfg(debug_assertions)]
+    vptr: OpaquePointer,
+    holder: OpaquePointer,           // WeakHandle<vm_class_loader_data>
+    class_loader: OpaquePointer,     // OopHandle
+    metaspace: OpaquePointer,        // ClassLoaderMetaspace*volatile
+    metaspace_lock: OpaquePointer,   // Mutex*
+    unloading: bool,                 // bool
+    is_anonymous: bool,              // bool
+    modified_oops: bool,             // bool
+    accumulated_modified_oops: bool, // bool
+    keep_alive: i16,
+    claimed: AtomicU32,
+    handles: ChunkedHandleList,
+}
+
+impl ClassLoaderData {
+    fn claim(&self) -> bool {
+        if self.claimed.load(Ordering::Relaxed) == 1 {
+            return false;
+        }
+        self.claimed
+            .compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+    }
+
+    pub fn oops_do<V: SlotVisitor<OpenJDKSlot<COMPRESSED>>, const COMPRESSED: bool>(
+        &self,
+        closure: &mut V,
+    ) {
+        if !self.claim() {
+            return;
+        }
+        self.handles.oops_do::<_, COMPRESSED>(closure);
+    }
 }

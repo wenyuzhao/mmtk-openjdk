@@ -6,6 +6,7 @@
 #include "oops/oop.hpp"
 #include "oops/oop.inline.hpp"
 #include "utilities/globalDefinitions.hpp"
+#include "classfile/classLoaderData.inline.hpp"
 
 class MMTkRootsClosure : public OopClosure {
   SlotsClosure _slots_closure;
@@ -55,9 +56,28 @@ public:
   virtual void do_oop(narrowOop* p) { do_oop_work(p, true); }
 };
 
+
+template <bool MODIFIED_ONLY, bool WEAK, bool CLAIM = false>
+class MMTkScanCLDClosure: public CLDClosure {
+ private:
+  OopClosure* _oop_closure;
+ protected:
+ public:
+  MMTkScanCLDClosure(OopClosure* c) : _oop_closure(c) { }
+  void do_cld(ClassLoaderData* cld) {
+    if (MODIFIED_ONLY) {
+      if (cld->has_modified_oops()) cld->oops_do(_oop_closure, CLAIM, /*clear_modified_oops*/true);
+    } else {
+      if (cld->has_modified_oops() || !WEAK)
+        cld->oops_do(_oop_closure, CLAIM, /*clear_modified_oops*/true);
+    }
+  }
+};
+
 class MMTkScanObjectClosure : public BasicOopIterateClosure {
-  void* _trace;
-  CLDToOopClosure follow_cld_closure;
+  void (*_trace)(void*);
+  bool _follow_clds;
+  bool _claim_clds;
 
   template <class T>
   void do_oop_work(T* p, bool narrow) {
@@ -65,27 +85,27 @@ class MMTkScanObjectClosure : public BasicOopIterateClosure {
       guarantee((uintptr_t(p) & (1ull << 63)) == 0, "test");
       p = (T*) (uintptr_t(p) | (1ull << 63));
     }
+    _trace((void*) p);
   }
 
 public:
-  MMTkScanObjectClosure(void* trace): _trace(trace), follow_cld_closure(this, false) {}
+  MMTkScanObjectClosure(void* trace, bool follow_clds, bool claim_clds): _trace((void (*)(void*)) trace), _follow_clds(follow_clds), _claim_clds(claim_clds) {}
 
   virtual void do_oop(oop* p)       { do_oop_work(p, false); }
   virtual void do_oop(narrowOop* p) { do_oop_work(p, true); }
 
   virtual bool do_metadata() {
-    return true;
+    return _follow_clds;
   }
 
   virtual void do_klass(Klass* k) {
-  //  follow_cld_closure.do_cld(k->class_loader_data());
-    // oop op = k->klass_holder();
-    // oop new_op = (oop) trace_root_object(_trace, op);
-    // guarantee(new_op == op, "trace_root_object returned a different value %p -> %p", op, new_op);
+    if (!_follow_clds) return;
+    do_cld(k->class_loader_data());
   }
 
   virtual void do_cld(ClassLoaderData* cld) {
-    follow_cld_closure.do_cld(cld);
+    if (!_follow_clds) return;
+    cld->oops_do(this, _claim_clds);
   }
 
   virtual ReferenceIterationMode reference_iteration_mode() { return DO_FIELDS; }
@@ -99,5 +119,15 @@ public:
 //     printf("CLD: %p", p);
 //   }
 // };
+
+class CodeBlobFixRelocationClosure: public CodeBlobClosure {
+  public:
+    inline virtual void do_code_blob(CodeBlob* cb) {
+      nmethod* nm = cb->as_nmethod_or_null();
+      if (nm != NULL) {
+        nm->fix_oop_relocations();
+      }
+    }
+ };
 
 #endif // MMTK_OPENJDK_MMTK_ROOTS_CLOSURE_HPP

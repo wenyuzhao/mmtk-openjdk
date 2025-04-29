@@ -483,6 +483,37 @@ pub extern "C" fn get_finalized_object() -> NullableObjectReference {
     with_singleton!(|singleton| memory_manager::get_finalized_object(singleton).into())
 }
 
+/// Test if an object is live at the end of a GC.
+/// Note: only call this method after the liveness tracing and before gc release.
+#[no_mangle]
+pub extern "C" fn mmtk_is_live(object: NullableObjectReference) -> usize {
+    let o: Option<ObjectReference> = object.into();
+    let Some(object) = o else {
+        return 0;
+    };
+    debug_assert!(
+        object.to_raw_address().is_mapped(),
+        "{:?} is not mapped",
+        object
+    );
+    object.is_live() as _
+}
+
+/// If the object is non-null and forwarded, return the forwarded pointer. Otherwise, return the original pointer.
+#[no_mangle]
+pub extern "C" fn mmtk_get_forwarded_ref(
+    object: NullableObjectReference,
+) -> NullableObjectReference {
+    let o: Option<ObjectReference> = object.into();
+    let Some(o) = o else {
+        return NullableObjectReference::from(None);
+    };
+    match o.get_forwarded_object() {
+        Some(o) => Some(o).into(),
+        None => object,
+    }
+}
+
 thread_local! {
     /// Cache reference slots of an nmethod while the current thread is executing
     /// `MMTkRegisterNMethodOopClosure`.
@@ -522,3 +553,13 @@ pub extern "C" fn mmtk_unregister_nmethod(nm: Address) {
         roots.remove(&nm);
     }
 }
+
+// #[no_mangle]
+// pub unsafe extern "C" fn mmtk_register_new_weak_handle(oop: *const Oop) {
+//     let addr = if crate::use_compressed_oops() {
+//         Address::from_usize(oop as usize | (1 << 63))
+//     } else {
+//         Address::from_ptr(oop)
+//     };
+//     crate::NURSERY_WEAK_HANDLE_ROOTS.lock().unwrap().push(addr);
+// }

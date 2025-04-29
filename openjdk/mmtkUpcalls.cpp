@@ -40,12 +40,56 @@
 #include "runtime/threadSMR.hpp"
 #include "runtime/vmThread.hpp"
 #include "utilities/debug.hpp"
+#include <cstdio>
 
 // Note: This counter must be accessed using the Atomic class.
 static volatile size_t mmtk_start_the_world_count = 0;
 
-static void mmtk_stop_all_mutators(void *tls, MutatorClosure closure) {
-  ClassLoaderDataGraph::clear_claimed_marks();
+class MMTkIsAliveClosure : public BoolObjectClosure {
+  public:
+    inline virtual bool do_object_b(oop p) {
+      if (p == NULL) return false;
+      return mmtk_is_live((void*) p) != 0;
+    }
+  };
+
+  class MMTkForwardClosure : public OopClosure {
+   public:
+    inline static size_t read_forwarding_word(oop o) {
+      return *((size_t*) (void*) o);
+    }
+    inline static oop extract_forwarding_pointer(size_t status) {
+      return (oop) (void*) (status << 8 >> 8);
+    }
+    inline static bool is_forwarded(size_t status) {
+      return (status >> 56) != 0;
+    }
+    inline virtual void do_oop(oop* slot) {
+      const auto o = *slot;
+      if (o == NULL) return;
+      const auto status = read_forwarding_word(o);
+      if (is_forwarded(status)) {
+        *slot = extract_forwarding_pointer(status);
+      }
+    }
+    inline virtual void do_oop(narrowOop* slot) {
+      narrowOop heap_oop = RawAccess<>::oop_load(slot);
+      if (CompressedOops::is_null(heap_oop)) return;
+      oop o = CompressedOops::decode_not_null(heap_oop);
+      const auto status = read_forwarding_word(o);
+      if (is_forwarded(status)) {
+        RawAccess<>::oop_store(slot, CompressedOops::encode_not_null(extract_forwarding_pointer(status)));
+      }
+    }
+  };
+
+
+static void mmtk_stop_all_mutators(void *tls, MutatorClosure closure, bool current_gc_should_unload_classes) {
+
+  if (ClassUnloading && current_gc_should_unload_classes) {
+    printf("clear_claimed_marks\n");
+    ClassLoaderDataGraph::clear_claimed_marks();
+  }
   CodeCache::gc_prologue();
 #if COMPILER2_OR_JVMCI
   DerivedPointerTable::clear();
@@ -64,15 +108,36 @@ static void mmtk_stop_all_mutators(void *tls, MutatorClosure closure) {
   nmethod::oops_do_marking_prologue();
 }
 
-static void mmtk_resume_mutators(void *tls) {
+static void mmtk_unload_classes() {
+  if (ClassUnloading) {
+    printf("UNLOAD\n");
+    // Unload classes and purge SystemDictionary.
+    auto purged_classes = SystemDictionary::do_unloading(NULL, false /* Defer cleaning */);
+    printf("purged_classes %d\n", purged_classes);
+    MMTkIsAliveClosure is_alive;
+    MMTkForwardClosure forward;
+    // LOG_CLS_UNLOAD("[mmtk_unload_classes] forward code cache ptrs");
+    // CodeBlobToOopClosure cb_cl(&forward, true);
+    // CodeCache::blobs_do(&cb_cl);
+    MMTkHeap::heap()->complete_cleaning(&is_alive, &forward, purged_classes);
+    ClassLoaderDataGraph::purge();
+    // Resize and verify metaspace
+    MetaspaceGC::compute_new_size();
+    MetaspaceUtils::verify_metrics();
+  }
+}
+
+static void mmtk_gc_epilogue() {
   nmethod::oops_do_marking_epilogue();
-  // ClassLoaderDataGraph::purge();
+  // BiasedLocking::restore_marks();
   CodeCache::gc_epilogue();
   JvmtiExport::gc_epilogue();
 #if COMPILER2_OR_JVMCI
   DerivedPointerTable::update_pointers();
 #endif
+}
 
+static void mmtk_resume_mutators(void *tls) {
   // Note: we don't have to hold gc_lock to increment the counter.
   // The increment has to be done before mutators can be resumed (from `block_for_gc` or yieldpoints).
   // Otherwise, mutators might see an outdated start-the-world count.
@@ -197,11 +262,12 @@ static void mmtk_scan_roots_in_mutator_thread(SlotsClosure closure, void* tls) {
   ResourceMark rm;
   JavaThread* thread = (JavaThread*) tls;
   MMTkRootsClosure cl(closure);
-  thread->oops_do(&cl, NULL);
+  MarkingCodeBlobClosure cb_cl(&cl, !CodeBlobToOopClosure::FixRelocations);
+  thread->oops_do(&cl, &cb_cl);
 }
 
-static void mmtk_scan_object(void* trace, void* object, void* tls) {
-  MMTkScanObjectClosure cl(trace);
+static void mmtk_scan_object(void* trace, void* object, void* tls, bool follow_clds, bool claim_clds) {
+  MMTkScanObjectClosure cl(trace, follow_clds, claim_clds);
   ((oop) object)->oop_iterate(&cl);
 }
 
@@ -282,7 +348,11 @@ static void mmtk_scan_aot_loader_roots(SlotsClosure closure) { MMTkRootsClosure 
 static void mmtk_scan_system_dictionary_roots(SlotsClosure closure) { MMTkRootsClosure cl(closure); MMTkHeap::heap()->scan_system_dictionary_roots(cl); }
 static void mmtk_scan_code_cache_roots(SlotsClosure closure) { MMTkRootsClosure cl(closure); MMTkHeap::heap()->scan_code_cache_roots(cl); }
 static void mmtk_scan_string_table_roots(SlotsClosure closure) { MMTkRootsClosure cl(closure); MMTkHeap::heap()->scan_string_table_roots(cl); }
-static void mmtk_scan_class_loader_data_graph_roots(SlotsClosure closure) { MMTkRootsClosure cl(closure); MMTkHeap::heap()->scan_class_loader_data_graph_roots(cl); }
+static void mmtk_scan_class_loader_data_graph_roots(SlotsClosure closure, SlotsClosure weak_closure, bool scan_all_strong_roots) {
+  MMTkRootsClosure cl(closure);
+  MMTkRootsClosure weak_cl(weak_closure);
+  MMTkHeap::heap()->scan_class_loader_data_graph_roots(cl, weak_cl, scan_all_strong_roots);
+}
 static void mmtk_scan_weak_processor_roots(SlotsClosure closure) { MMTkRootsClosure cl(closure); MMTkHeap::heap()->scan_weak_processor_roots(cl); }
 static void mmtk_scan_vm_thread_roots(SlotsClosure closure) { MMTkRootsClosure cl(closure); MMTkHeap::heap()->scan_vm_thread_roots(cl); }
 
@@ -316,6 +386,18 @@ static void mmtk_enqueue_references(void** objects, size_t len) {
   oop old = Universe::swap_reference_pending_list(prev);
   HeapAccess<AS_NO_KEEPALIVE>::oop_store_at(prev, java_lang_ref_Reference::discovered_offset, old);
   assert(Universe::has_reference_pending_list(), "Reference pending list is empty after swap");
+}
+
+static size_t mmtk_java_lang_class_klass_offset_in_bytes() {
+  auto v = java_lang_Class::klass_offset_in_bytes();
+  guarantee(v != 0 && v != -1, "checking");
+  return v;
+}
+
+static size_t mmtk_java_lang_classloader_loader_data_offset() {
+  auto v = java_lang_ClassLoader::loader_data_offset();
+  guarantee(v != 0 && v != -1, "checking");
+  return v;
 }
 
 OpenJDK_Upcalls mmtk_upcalls = {
@@ -355,5 +437,9 @@ OpenJDK_Upcalls mmtk_upcalls = {
   mmtk_number_of_mutators,
   mmtk_schedule_finalizer,
   mmtk_prepare_for_roots_re_scanning,
-  mmtk_enqueue_references
+  mmtk_enqueue_references,
+  mmtk_java_lang_class_klass_offset_in_bytes,
+  mmtk_java_lang_classloader_loader_data_offset,
+  mmtk_unload_classes,
+  mmtk_gc_epilogue,
 };

@@ -163,6 +163,18 @@ impl<const COMPRESSED: bool> OpenJDKSlot<COMPRESSED> {
             unsafe { self.addr.store(0) }
         }
     }
+
+    pub fn to_address(&self) -> Address {
+        self.untagged_address()
+    }
+
+    pub fn raw_address(&self) -> Address {
+        self.addr
+    }
+
+    pub fn from_address(a: Address) -> Self {
+        Self { addr: a }
+    }
 }
 
 impl<const COMPRESSED: bool> Slot for OpenJDKSlot<COMPRESSED> {

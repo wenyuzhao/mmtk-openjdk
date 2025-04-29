@@ -48,6 +48,8 @@
 #include "services/memoryManager.hpp"
 #include "services/memTracker.hpp"
 #include "utilities/vmError.hpp"
+#include "mmtkParallelCleaning.hpp"
+#include "mmtkRootsClosure.hpp"
 /*
 needed support from rust
 heap capacity
@@ -147,6 +149,11 @@ jint MMTkHeap::initialize() {
     fprintf(stderr, "Failed to create thread");
     guarantee(false, "panic");
   }
+  unsigned int ncpus = (unsigned int) os::initial_active_processor_count();
+  _workers = new WorkGang("GC Thread", ncpus, /* are_GC_task_threads */true, /* are_ConcurrentGC_threads */false);
+  _workers->initialize_workers();
+  _workers->update_active_workers(Abstract_VM_Version::parallel_worker_threads());
+
   os::start_thread(_companion_thread);
   // Set up the GCTaskManager
   //  _mmtk_gc_task_manager = mmtkGCTaskManager::create(ParallelGCThreads);
@@ -289,11 +296,18 @@ void MMTkHeap::collect(GCCause::Cause cause) {//later when gc is implemented in 
 
 // Perform a full collection
 void MMTkHeap::do_full_collection(bool clear_all_soft_refs) {//later when gc is implemented in rust
+  printf("do_full_collection\n");
   // guarantee(false, "do full collection not supported");
 
   // handle_user_collection_request((MMTk_Mutator) &Thread::current()->third_party_heap_mutator);
 }
 
+void MMTkHeap::collect_as_vm_thread(GCCause::Cause cause) {//later when gc is implemented in rust
+  printf("collect_as_vm_thread\n");
+  // guarantee(false, "do full collection not supported");
+
+  // handle_user_collection_request((MMTk_Mutator) &Thread::current()->third_party_heap_mutator);
+}
 
 // Return the CollectorPolicy for the heap
 CollectorPolicy* MMTkHeap::collector_policy() const {return _collector_policy;}//OK
@@ -445,9 +459,23 @@ void MMTkHeap::scan_code_cache_roots(OopClosure& cl) {
 void MMTkHeap::scan_string_table_roots(OopClosure& cl) {
   StringTable::oops_do(&cl);
 }
-void MMTkHeap::scan_class_loader_data_graph_roots(OopClosure& cl) {
-  CLDToOopClosure cld_cl(&cl, false);
-  ClassLoaderDataGraph::cld_do(&cld_cl);
+
+void MMTkHeap::scan_class_loader_data_graph_roots(OopClosure& cl, OopClosure& weak_cl, bool scan_all_strong_roots) {
+  if (!ClassUnloading) {
+    CLDToOopClosure cld_cl(&cl, false);
+    CLDToOopClosure weak_cld_cl(&weak_cl, false);
+    ClassLoaderDataGraph::roots_cld_do(&cld_cl, &weak_cld_cl);
+  } else if (scan_all_strong_roots) {
+    // At the start of full heap trace, we want to scan all the strong CLD roots + all the modified CLDs.
+    MMTkScanCLDClosure</*MODIFIED_ONLY*/ false, /*WEAK*/ false, /*CLAIM*/ false> cld_cl(&cl);
+    MMTkScanCLDClosure</*MODIFIED_ONLY*/ true, /*WEAK*/ true, /*CLAIM*/ false> weak_cld_cl(&weak_cl);
+    ClassLoaderDataGraph::roots_cld_do(&cld_cl, &weak_cld_cl);
+  } else {
+    // Normal RC pause: We simply apply increments to modified CLD roots. No decrements will be applied on these roots.
+    MMTkScanCLDClosure</*MODIFIED_ONLY*/ true, /*WEAK*/ false> cld_cl(&cl);
+    MMTkScanCLDClosure</*MODIFIED_ONLY*/ true, /*WEAK*/ true> weak_cld_cl(&weak_cl);
+    ClassLoaderDataGraph::roots_cld_do(&cld_cl, &weak_cld_cl);
+  }
 }
 void MMTkHeap::scan_weak_processor_roots(OopClosure& cl) {
   ResourceMark rm;
@@ -505,6 +533,20 @@ HeapWord* MMTkHeap::mem_allocate(size_t size, bool* gc_overhead_limit_was_exceed
 
 HeapWord* MMTkHeap::mem_allocate_nonmove(size_t size, bool* gc_overhead_limit_was_exceeded) {
   return Thread::current()->third_party_heap_mutator.alloc(size << LogHeapWordSize, AllocatorLos);
+}
+
+void MMTkHeap::complete_cleaning(BoolObjectClosure* is_alive, OopClosure* forward, bool purged_classes) {
+  ResourceMark rm;
+  HandleMark hm;
+  uint num_workers = _workers->active_workers();
+  mmtk::ParallelCleaningTask unlink_task(is_alive, forward, num_workers, purged_classes);
+  _workers->run_task(&unlink_task);
+}
+
+void MMTkHeap::register_new_weak_handle(oop* handle) {
+  // if (REQUIRES_WEAK_HANDLE_BARRIER) {
+  //   mmtk_register_new_weak_handle((void*) handle);
+  // }
 }
 
 /*

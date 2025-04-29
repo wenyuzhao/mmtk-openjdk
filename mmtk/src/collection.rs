@@ -11,14 +11,18 @@ pub struct VMCollection {}
 const GC_THREAD_KIND_WORKER: libc::c_int = 1;
 
 impl<const COMPRESSED: bool> Collection<OpenJDK<COMPRESSED>> for VMCollection {
-    fn stop_all_mutators<F>(tls: VMWorkerThread, mut mutator_visitor: F)
-    where
+    fn stop_all_mutators<F>(
+        tls: VMWorkerThread,
+        mut mutator_visitor: F,
+        current_gc_should_unload_classes: bool,
+    ) where
         F: FnMut(&'static mut Mutator<OpenJDK<COMPRESSED>>),
     {
         unsafe {
             ((*UPCALLS).stop_all_mutators)(
                 tls,
                 MutatorClosure::from_rust_closure::<_, COMPRESSED>(&mut mutator_visitor),
+                current_gc_should_unload_classes,
             );
         }
     }
@@ -55,6 +59,15 @@ impl<const COMPRESSED: bool> Collection<OpenJDK<COMPRESSED>> for VMCollection {
     fn schedule_finalization(_tls: VMWorkerThread) {
         unsafe {
             ((*UPCALLS).schedule_finalizer)();
+        }
+    }
+
+    fn vm_release(do_unloading: bool) {
+        unsafe {
+            if do_unloading {
+                ((*UPCALLS).unload_classes)();
+            }
+            ((*UPCALLS).gc_epilogue)();
         }
     }
 }

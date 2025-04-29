@@ -82,13 +82,23 @@ pub struct SlotsClosure {
 
 #[repr(C)]
 pub struct OpenJDK_Upcalls {
-    pub stop_all_mutators: extern "C" fn(tls: VMWorkerThread, closure: MutatorClosure),
+    pub stop_all_mutators: extern "C" fn(
+        tls: VMWorkerThread,
+        closure: MutatorClosure,
+        current_gc_should_unload_classes: bool,
+    ),
     pub resume_mutators: extern "C" fn(tls: VMWorkerThread),
     pub spawn_gc_thread: extern "C" fn(tls: VMThread, kind: libc::c_int, ctx: *mut libc::c_void),
     pub block_for_gc: extern "C" fn(),
     pub out_of_memory: extern "C" fn(tls: VMThread, err_kind: AllocationError),
     pub get_mutators: extern "C" fn(closure: MutatorClosure),
-    pub scan_object: extern "C" fn(trace: *mut c_void, object: ObjectReference, tls: OpaquePointer),
+    pub scan_object: extern "C" fn(
+        trace: *mut c_void,
+        object: ObjectReference,
+        tls: OpaquePointer,
+        follow_clds: bool,
+        claim_clds: bool,
+    ),
     pub dump_object: extern "C" fn(object: ObjectReference),
     pub get_object_size: extern "C" fn(object: ObjectReference) -> usize,
     pub get_mmtk_mutator: extern "C" fn(tls: VMMutatorThread) -> *mut libc::c_void,
@@ -112,13 +122,25 @@ pub struct OpenJDK_Upcalls {
     pub scan_system_dictionary_roots: extern "C" fn(closure: SlotsClosure),
     pub scan_code_cache_roots: extern "C" fn(closure: SlotsClosure),
     pub scan_string_table_roots: extern "C" fn(closure: SlotsClosure),
-    pub scan_class_loader_data_graph_roots: extern "C" fn(closure: SlotsClosure),
+    pub scan_class_loader_data_graph_roots:
+        extern "C" fn(closure: SlotsClosure, weak_closure: SlotsClosure, scan_weak: bool),
     pub scan_weak_processor_roots: extern "C" fn(closure: SlotsClosure),
     pub scan_vm_thread_roots: extern "C" fn(closure: SlotsClosure),
     pub number_of_mutators: extern "C" fn() -> usize,
     pub schedule_finalizer: extern "C" fn(),
     pub prepare_for_roots_re_scanning: extern "C" fn(),
     pub enqueue_references: extern "C" fn(objects: *const ObjectReference, len: usize),
+    pub java_lang_class_klass_offset_in_bytes: extern "C" fn() -> usize,
+    pub java_lang_classloader_loader_data_offset: extern "C" fn() -> usize,
+    pub unload_classes: extern "C" fn(),
+    pub gc_epilogue: extern "C" fn(),
+}
+
+lazy_static! {
+    pub static ref JAVA_LANG_CLASS_KLASS_OFFSET_IN_BYTES: usize =
+        unsafe { ((*UPCALLS).java_lang_class_klass_offset_in_bytes)() };
+    pub static ref JAVA_LANG_CLASSLOADER_LOADER_DATA_OFFSET: usize =
+        unsafe { ((*UPCALLS).java_lang_classloader_loader_data_offset)() };
 }
 
 pub static mut UPCALLS: *const OpenJDK_Upcalls = null_mut();
