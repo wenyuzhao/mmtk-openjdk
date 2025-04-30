@@ -25,6 +25,7 @@
 #include "precompiled.hpp"
 #include "classfile/stringTable.hpp"
 #include "code/nmethod.hpp"
+#include "gc/shared/weakProcessor.hpp"
 #include "memory/iterator.inline.hpp"
 #include "memory/resourceArea.hpp"
 #include "mmtkCollectorThread.hpp"
@@ -49,7 +50,11 @@ class MMTkIsAliveClosure : public BoolObjectClosure {
   public:
     inline virtual bool do_object_b(oop p) {
       if (p == NULL) return false;
-      return mmtk_is_live((void*) p) != 0;
+      auto alive = mmtk_is_live((void*) p) != 0;
+      if (!alive) {
+        printf("MMTkIsAliveClosure: %p is not alive\n", p);
+      }
+      return alive;
     }
   };
 
@@ -108,7 +113,18 @@ static void mmtk_stop_all_mutators(void *tls, MutatorClosure closure, bool curre
   nmethod::oops_do_marking_prologue();
 }
 
+static void mmtk_update_weak_processor() {
+  HandleMark hm;
+  MMTkIsAliveClosure is_alive;
+  MMTkForwardClosure forward;
+  WeakProcessor::weak_oops_do(&is_alive, &forward);
+  StringTable::oops_do(&forward);
+  CodeBlobToOopClosure cb_cl(&forward, true);
+  CodeCache::scavenge_root_nmethods_do(&cb_cl);
+}
+
 static void mmtk_unload_classes() {
+  mmtk_update_weak_processor();
   if (ClassUnloading) {
     printf("UNLOAD\n");
     // Unload classes and purge SystemDictionary.
