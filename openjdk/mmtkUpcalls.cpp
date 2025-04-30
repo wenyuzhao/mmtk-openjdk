@@ -52,7 +52,7 @@ class MMTkIsAliveClosure : public BoolObjectClosure {
       if (p == NULL) return false;
       auto alive = mmtk_is_live((void*) p) != 0;
       if (!alive) {
-        printf("MMTkIsAliveClosure: %p is not alive\n", p);
+        // printf("MMTkIsAliveClosure: %p is not alive\n", p);
       }
       return alive;
     }
@@ -92,7 +92,7 @@ class MMTkIsAliveClosure : public BoolObjectClosure {
 static void mmtk_stop_all_mutators(void *tls, MutatorClosure closure, bool current_gc_should_unload_classes) {
 
   if (ClassUnloading && current_gc_should_unload_classes) {
-    printf("clear_claimed_marks\n");
+    // printf("clear_claimed_marks\n");
     ClassLoaderDataGraph::clear_claimed_marks();
   }
   CodeCache::gc_prologue();
@@ -126,10 +126,10 @@ static void mmtk_update_weak_processor() {
 static void mmtk_unload_classes() {
   mmtk_update_weak_processor();
   if (ClassUnloading) {
-    printf("UNLOAD\n");
+    // printf("UNLOAD\n");
     // Unload classes and purge SystemDictionary.
     auto purged_classes = SystemDictionary::do_unloading(NULL, false /* Defer cleaning */);
-    printf("purged_classes %d\n", purged_classes);
+    // printf("purged_classes %d\n", purged_classes);
     MMTkIsAliveClosure is_alive;
     MMTkForwardClosure forward;
     // LOG_CLS_UNLOAD("[mmtk_unload_classes] forward code cache ptrs");

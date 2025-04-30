@@ -308,7 +308,7 @@ void MMTkHeap::collect(GCCause::Cause cause) {//later when gc is implemented in 
 
 // Perform a full collection
 void MMTkHeap::do_full_collection(bool clear_all_soft_refs) {//later when gc is implemented in rust
-  printf("do_full_collection\n");
+  // printf("do_full_collection\n");
   handle_user_collection_request((MMTk_Mutator) &Thread::current()->third_party_heap_mutator, true);
   // guarantee(false, "do full collection not supported");
 
@@ -316,7 +316,7 @@ void MMTkHeap::do_full_collection(bool clear_all_soft_refs) {//later when gc is 
 }
 
 void MMTkHeap::collect_as_vm_thread(GCCause::Cause cause) {//later when gc is implemented in rust
-  printf("collect_as_vm_thread\n");
+  // printf("collect_as_vm_thread\n");
   MMTkHeap::heap()->companion_thread()->vm_thread_requires_gc_pause();
   handle_user_collection_request(NULL, true);
   MMTkHeap::heap()->companion_thread()->block_vm_thread();
@@ -482,7 +482,7 @@ void MMTkHeap::scan_class_loader_data_graph_roots(OopClosure& cl, OopClosure& we
     CLDToOopClosure weak_cld_cl(&weak_cl, false);
     ClassLoaderDataGraph::roots_cld_do(&cld_cl, &weak_cld_cl);
   } else if (scan_all_strong_roots) {
-    printf("scan_class_loader_data_graph_roots\n");
+    // printf("scan_class_loader_data_graph_roots\n");
     // At the start of full heap trace, we want to scan all the strong CLD roots + all the modified CLDs.
     MMTkScanCLDClosure</*MODIFIED_ONLY*/ false, /*WEAK*/ false, /*CLAIM*/ true> cld_cl(&cl);
     // MMTkScanCLDClosure</*MODIFIED_ONLY*/ true, /*WEAK*/ true, /*CLAIM*/ false> weak_cld_cl(&weak_cl);
