@@ -123,6 +123,7 @@ impl<const COMPRESSED: bool, F: RootsWorkFactory<OpenJDKSlot<COMPRESSED>>>
         // }
     }
 }
+
 extern "C" fn report_slots_and_renew_buffer_cld<
     S: Slot,
     F: RootsWorkFactory<S>,
