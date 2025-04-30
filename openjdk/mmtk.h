@@ -101,7 +101,7 @@ extern bool will_never_move(void* object);
 extern bool process(char* name, char* value);
 extern bool process_bulk(char* options);
 extern void scan_region();
-extern void handle_user_collection_request(void *tls);
+extern void handle_user_collection_request(void *tls, bool force);
 
 extern void start_control_collector(void *tls, void *context);
 extern void start_worker(void *tls, void* worker);

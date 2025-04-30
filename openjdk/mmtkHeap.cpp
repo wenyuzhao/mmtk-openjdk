@@ -290,13 +290,26 @@ bool MMTkHeap::card_mark_must_follow_store() const { //OK
 }
 
 void MMTkHeap::collect(GCCause::Cause cause) {//later when gc is implemented in rust
-  handle_user_collection_request((MMTk_Mutator) &Thread::current()->third_party_heap_mutator);
+  if (cause == GCCause::_gc_locker) {
+    #ifndef PRODUCT
+      auto safepoint_check_required = JNICritical_lock->_safepoint_check_required;
+      JNICritical_lock->_safepoint_check_required = Monitor::_safepoint_check_sometimes;
+    #endif
+    MutexLockerEx locker(JNICritical_lock, Mutex::_no_safepoint_check_flag);
+    // Notify the VMCompanionThread to trigger another VM_MMTkSTWOperation.
+    JNICritical_lock->notify_all();
+    #ifndef PRODUCT
+      JNICritical_lock->_safepoint_check_required = safepoint_check_required;
+    #endif
+  }
+  handle_user_collection_request((MMTk_Mutator) &Thread::current()->third_party_heap_mutator, cause != GCCause::_java_lang_system_gc);
   // guarantee(false, "collect not supported");
 }
 
 // Perform a full collection
 void MMTkHeap::do_full_collection(bool clear_all_soft_refs) {//later when gc is implemented in rust
   printf("do_full_collection\n");
+  handle_user_collection_request((MMTk_Mutator) &Thread::current()->third_party_heap_mutator, true);
   // guarantee(false, "do full collection not supported");
 
   // handle_user_collection_request((MMTk_Mutator) &Thread::current()->third_party_heap_mutator);
@@ -304,6 +317,9 @@ void MMTkHeap::do_full_collection(bool clear_all_soft_refs) {//later when gc is 
 
 void MMTkHeap::collect_as_vm_thread(GCCause::Cause cause) {//later when gc is implemented in rust
   printf("collect_as_vm_thread\n");
+  MMTkHeap::heap()->companion_thread()->vm_thread_requires_gc_pause();
+  handle_user_collection_request(NULL, true);
+  MMTkHeap::heap()->companion_thread()->block_vm_thread();
   // guarantee(false, "do full collection not supported");
 
   // handle_user_collection_request((MMTk_Mutator) &Thread::current()->third_party_heap_mutator);
