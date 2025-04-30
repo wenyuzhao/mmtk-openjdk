@@ -120,7 +120,7 @@ static void mmtk_update_weak_processor() {
   WeakProcessor::weak_oops_do(&is_alive, &forward);
   StringTable::oops_do(&forward);
   CodeBlobToOopClosure cb_cl(&forward, true);
-  CodeCache::scavenge_root_nmethods_do(&cb_cl);
+  CodeCache::blobs_do(&cb_cl);
 }
 
 static void mmtk_unload_classes() {
