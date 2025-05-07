@@ -73,7 +73,12 @@ impl<const COMPRESSED: bool> Scanning<OpenJDK<COMPRESSED>> for VMScanning {
         _tls: VMWorkerThread,
         factory: impl RootsWorkFactory<OpenJDKSlot<COMPRESSED>>,
     ) {
-        let w = vec![
+        let is_current_gc_nursery = crate::singleton::<COMPRESSED>()
+            .get_plan()
+            .generational()
+            .is_some_and(|gen| gen.is_current_gc_nursery());
+
+        let mut w = vec![
             Box::new(ScanUniverseRoots::new(factory.clone())) as _,
             Box::new(ScanJNIHandlesRoots::new(factory.clone())) as _,
             Box::new(ScanObjectSynchronizerRoots::new(factory.clone())) as _,
@@ -82,8 +87,13 @@ impl<const COMPRESSED: bool> Scanning<OpenJDK<COMPRESSED>> for VMScanning {
             Box::new(ScanAOTLoaderRoots::new(factory.clone())) as _,
             Box::new(ScanSystemDictionaryRoots::new(factory.clone())) as _,
             Box::new(ScanClassLoaderDataGraphRoots::new(factory.clone())) as _,
+            Box::new(ScanCodeCacheRoots::new(factory.clone())) as _,
             Box::new(ScanVMThreadRoots::new(factory.clone())) as _,
         ];
+        if is_current_gc_nursery {
+            w.push(Box::new(ScanStringTableRoots::new(factory.clone())) as _);
+            w.push(Box::new(ScanWeakProcessorRoots::new(factory.clone())) as _);
+        }
         memory_manager::add_work_packets(
             crate::singleton::<COMPRESSED>(),
             WorkBucketStage::Prepare,

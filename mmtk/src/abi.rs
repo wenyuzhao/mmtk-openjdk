@@ -1,6 +1,5 @@
 use super::UPCALLS;
 use crate::OpenJDKSlot;
-use crate::Slot;
 use atomic::Atomic;
 use atomic::Ordering;
 use mmtk::util::constants::*;
@@ -326,17 +325,6 @@ pub fn set_compressed_klass_base_and_shift(base: Address, shift: usize) {
 impl OopDesc {
     pub fn start(&self) -> Address {
         unsafe { mem::transmute(self) }
-    }
-
-    pub(crate) fn klass_ptr<const COMPRESSED: bool>(&self) -> Address {
-        if COMPRESSED {
-            let compressed = unsafe { self.klass.narrow_klass };
-            let addr = COMPRESSED_KLASS_BASE.load(Ordering::Relaxed)
-                + ((compressed as usize) << COMPRESSED_KLASS_SHIFT.load(Ordering::Relaxed));
-            addr
-        } else {
-            unsafe { Address::from_ref(self.klass.klass) }
-        }
     }
 
     pub fn klass<const COMPRESSED: bool>(&self) -> &'static Klass {

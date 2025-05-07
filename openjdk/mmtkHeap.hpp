@@ -162,8 +162,6 @@ public:
 
   virtual void prepare_for_verify() override;
 
-  virtual void register_new_weak_handle(oop* handle) override;
-
 private:
 
   virtual void initialize_serviceability() override;
@@ -214,7 +212,7 @@ public:
   void scan_system_dictionary_roots(OopClosure& cl);
   void scan_code_cache_roots(OopClosure& cl);
   void scan_string_table_roots(OopClosure& cl);
-  void scan_class_loader_data_graph_roots(OopClosure& cl, OopClosure& weak_cl, bool scan_all_strong_roots);
+  void scan_class_loader_data_graph_roots(OopClosure& cl);
   void scan_weak_processor_roots(OopClosure& cl);
   void scan_vm_thread_roots(OopClosure& cl);
 

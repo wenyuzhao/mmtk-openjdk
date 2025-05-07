@@ -46,10 +46,25 @@
 // Note: This counter must be accessed using the Atomic class.
 static volatile size_t mmtk_start_the_world_count = 0;
 
+inline static size_t read_forwarding_word(oop o) {
+  return *((size_t*) (void*) o);
+}
+inline static oop extract_forwarding_pointer(size_t status) {
+  return (oop) (void*) (status << 8 >> 8);
+}
+inline static bool is_forwarded(size_t status) {
+  return (status >> 56) != 0;
+}
+
 class MMTkIsAliveClosure : public BoolObjectClosure {
+
   public:
     inline virtual bool do_object_b(oop p) {
       if (p == NULL) return false;
+
+      if (is_forwarded(read_forwarding_word(p))) {
+        return true;
+      }
       auto alive = mmtk_is_live((void*) p) != 0;
       if (!alive) {
         // printf("MMTkIsAliveClosure: %p is not alive\n", p);
@@ -60,15 +75,6 @@ class MMTkIsAliveClosure : public BoolObjectClosure {
 
   class MMTkForwardClosure : public OopClosure {
    public:
-    inline static size_t read_forwarding_word(oop o) {
-      return *((size_t*) (void*) o);
-    }
-    inline static oop extract_forwarding_pointer(size_t status) {
-      return (oop) (void*) (status << 8 >> 8);
-    }
-    inline static bool is_forwarded(size_t status) {
-      return (status >> 56) != 0;
-    }
     inline virtual void do_oop(oop* slot) {
       const auto o = *slot;
       if (o == NULL) return;
@@ -92,7 +98,6 @@ class MMTkIsAliveClosure : public BoolObjectClosure {
 static void mmtk_stop_all_mutators(void *tls, MutatorClosure closure, bool current_gc_should_unload_classes) {
 
   if (ClassUnloading && current_gc_should_unload_classes) {
-    // printf("clear_claimed_marks\n");
     ClassLoaderDataGraph::clear_claimed_marks();
   }
   CodeCache::gc_prologue();
@@ -113,7 +118,7 @@ static void mmtk_stop_all_mutators(void *tls, MutatorClosure closure, bool curre
   nmethod::oops_do_marking_prologue();
 }
 
-static void mmtk_update_weak_processor() {
+static void update_pointers() {
   HandleMark hm;
   MMTkIsAliveClosure is_alive;
   MMTkForwardClosure forward;
@@ -124,7 +129,6 @@ static void mmtk_update_weak_processor() {
 }
 
 static void mmtk_unload_classes() {
-  mmtk_update_weak_processor();
   if (ClassUnloading) {
     // printf("UNLOAD\n");
     // Unload classes and purge SystemDictionary.
@@ -144,6 +148,7 @@ static void mmtk_unload_classes() {
 }
 
 static void mmtk_gc_epilogue() {
+  update_pointers();
   nmethod::oops_do_marking_epilogue();
   // BiasedLocking::restore_marks();
   CodeCache::gc_epilogue();
@@ -364,10 +369,9 @@ static void mmtk_scan_aot_loader_roots(SlotsClosure closure) { MMTkRootsClosure 
 static void mmtk_scan_system_dictionary_roots(SlotsClosure closure) { MMTkRootsClosure cl(closure); MMTkHeap::heap()->scan_system_dictionary_roots(cl); }
 static void mmtk_scan_code_cache_roots(SlotsClosure closure) { MMTkRootsClosure cl(closure); MMTkHeap::heap()->scan_code_cache_roots(cl); }
 static void mmtk_scan_string_table_roots(SlotsClosure closure) { MMTkRootsClosure cl(closure); MMTkHeap::heap()->scan_string_table_roots(cl); }
-static void mmtk_scan_class_loader_data_graph_roots(SlotsClosure closure, SlotsClosure weak_closure, bool scan_all_strong_roots) {
+static void mmtk_scan_class_loader_data_graph_roots(SlotsClosure closure) {
   MMTkRootsClosure cl(closure);
-  MMTkRootsClosure weak_cl(weak_closure);
-  MMTkHeap::heap()->scan_class_loader_data_graph_roots(cl, weak_cl, scan_all_strong_roots);
+  MMTkHeap::heap()->scan_class_loader_data_graph_roots(cl);
 }
 static void mmtk_scan_weak_processor_roots(SlotsClosure closure) { MMTkRootsClosure cl(closure); MMTkHeap::heap()->scan_weak_processor_roots(cl); }
 static void mmtk_scan_vm_thread_roots(SlotsClosure closure) { MMTkRootsClosure cl(closure); MMTkHeap::heap()->scan_vm_thread_roots(cl); }

@@ -176,7 +176,7 @@ typedef struct {
     void (*scan_system_dictionary_roots) (SlotsClosure closure);
     void (*scan_code_cache_roots) (SlotsClosure closure);
     void (*scan_string_table_roots) (SlotsClosure closure);
-    void (*scan_class_loader_data_graph_roots) (SlotsClosure closure, SlotsClosure weak_closure, bool scan_weak);
+    void (*scan_class_loader_data_graph_roots) (SlotsClosure closure);
     void (*scan_weak_processor_roots) (SlotsClosure closure);
     void (*scan_vm_thread_roots) (SlotsClosure closure);
     size_t (*number_of_mutators)();

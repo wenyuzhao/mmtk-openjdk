@@ -2,7 +2,6 @@ use crate::OpenJDKSlot;
 
 use super::abi::*;
 use super::UPCALLS;
-use crate::Slot;
 use mmtk::util::opaque_pointer::*;
 use mmtk::util::{Address, ObjectReference};
 use mmtk::vm::SlotVisitor;
