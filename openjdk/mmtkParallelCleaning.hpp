@@ -71,6 +71,7 @@ class CodeCacheUnloadingTask {
 private:
   static Monitor* _lock;
 
+  OopClosure* _forward;
   BoolObjectClosure* const _is_alive;
   const bool               _unloading_occurred;
   const uint               _num_workers;
@@ -84,7 +85,7 @@ private:
   volatile uint     _num_entered_barrier;
 
  public:
-  CodeCacheUnloadingTask(uint num_workers, BoolObjectClosure* is_alive, bool unloading_occurred);
+  CodeCacheUnloadingTask(uint num_workers, BoolObjectClosure* is_alive, OopClosure* forward, bool unloading_occurred);
   ~CodeCacheUnloadingTask();
 
  private:

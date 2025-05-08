@@ -122,8 +122,6 @@ static void update_weak_processor() {
   MMTkIsAliveClosure is_alive;
   MMTkForwardClosure forward;
   WeakProcessor::weak_oops_do(&is_alive, &forward);
-  CodeBlobToOopClosure cb_cl(&forward, true);
-  CodeCache::blobs_do(&cb_cl);
 }
 
 static void mmtk_unload_classes() {

@@ -142,7 +142,8 @@ void StringSymbolTableUnlinkTask::barrier_wait(uint worker_id) {
 Monitor* StringSymbolTableUnlinkTask::_lock = new Monitor(Mutex::leaf, "String Table Unload lock", false, Monitor::_safepoint_check_never);
 Monitor* CodeCacheUnloadingTask::_lock = new Monitor(Mutex::leaf, "Code Cache Unload lock", false, Monitor::_safepoint_check_never);
 
-CodeCacheUnloadingTask::CodeCacheUnloadingTask(uint num_workers, BoolObjectClosure* is_alive, bool unloading_occurred) :
+CodeCacheUnloadingTask::CodeCacheUnloadingTask(uint num_workers, BoolObjectClosure* is_alive, OopClosure* forward, bool unloading_occurred) :
+  _forward(forward),
   _is_alive(is_alive),
   _unloading_occurred(unloading_occurred),
   _num_workers(num_workers),
@@ -177,17 +178,25 @@ void CodeCacheUnloadingTask::add_to_postponed_list(CompiledMethod* nm) {
   } while ((CompiledMethod*)Atomic::cmpxchg(nm, &_postponed_list, old) != old);
 }
 
-void CodeCacheUnloadingTask::clean_nmethod(CompiledMethod* nm) {
+
+
+void CodeCacheUnloadingTask::clean_nmethod(CompiledMethod* cm) {
+  nmethod* nm = cm->as_nmethod_or_null();
+  if (nm != NULL) {
+    nm->oops_do(_forward);
+    nm->fix_oop_relocations();
+  }
+
   bool postponed = nm->do_unloading_parallel(_is_alive, _unloading_occurred);
 
   if (postponed) {
     // This nmethod referred to an nmethod that has not been cleaned/unloaded yet.
-    add_to_postponed_list(nm);
+    add_to_postponed_list(cm);
   }
 
   // Mark that this thread has been cleaned/unloaded.
   // After this call, it will be safe to ask if this nmethod was unloaded or not.
-  nm->set_unloading_clock(CompiledMethod::global_unloading_clock());
+  cm->set_unloading_clock(CompiledMethod::global_unloading_clock());
 }
 
 void CodeCacheUnloadingTask::clean_nmethod_postponed(CompiledMethod* nm) {
@@ -352,7 +361,7 @@ ParallelCleaningTask::ParallelCleaningTask(BoolObjectClosure* is_alive,
   AbstractGangTask("Parallel Cleaning"),
   _unloading_occurred(unloading_occurred),
   _string_symbol_task(num_workers, is_alive, forward),
-  _code_cache_task(num_workers, is_alive, unloading_occurred),
+  _code_cache_task(num_workers, is_alive, forward, unloading_occurred),
   _klass_cleaning_task(is_alive),
   _resolved_method_cleaning_task(is_alive)
   // _phase(phase)
