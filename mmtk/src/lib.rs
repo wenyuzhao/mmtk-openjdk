@@ -132,7 +132,7 @@ pub struct OpenJDK_Upcalls {
     pub java_lang_class_klass_offset_in_bytes: extern "C" fn() -> usize,
     pub java_lang_classloader_loader_data_offset: extern "C" fn() -> usize,
     pub unload_classes: extern "C" fn(),
-    pub gc_epilogue: extern "C" fn(),
+    pub gc_epilogue: extern "C" fn(unload_classes: bool),
 }
 
 lazy_static! {

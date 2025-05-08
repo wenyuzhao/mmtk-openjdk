@@ -186,7 +186,7 @@ typedef struct {
     size_t (*java_lang_class_klass_offset_in_bytes)();
     size_t (*java_lang_classloader_loader_data_offset)();
     void (*unload_classes)();
-    void (*gc_epilogue)();
+    void (*gc_epilogue)(bool unload);
 } OpenJDK_Upcalls;
 
 extern void openjdk_gc_init(OpenJDK_Upcalls *calls);

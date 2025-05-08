@@ -96,7 +96,6 @@ class MMTkIsAliveClosure : public BoolObjectClosure {
 
 
 static void mmtk_stop_all_mutators(void *tls, MutatorClosure closure, bool current_gc_should_unload_classes) {
-
   if (ClassUnloading && current_gc_should_unload_classes) {
     ClassLoaderDataGraph::clear_claimed_marks();
   }
@@ -129,26 +128,23 @@ static void update_pointers() {
 }
 
 static void mmtk_unload_classes() {
-  if (ClassUnloading) {
-    // printf("UNLOAD\n");
-    // Unload classes and purge SystemDictionary.
-    auto purged_classes = SystemDictionary::do_unloading(NULL, false /* Defer cleaning */);
-    // printf("purged_classes %d\n", purged_classes);
-    MMTkIsAliveClosure is_alive;
-    MMTkForwardClosure forward;
-    // LOG_CLS_UNLOAD("[mmtk_unload_classes] forward code cache ptrs");
-    // CodeBlobToOopClosure cb_cl(&forward, true);
-    // CodeCache::blobs_do(&cb_cl);
-    MMTkHeap::heap()->complete_cleaning(&is_alive, &forward, purged_classes);
-    ClassLoaderDataGraph::purge();
-    // Resize and verify metaspace
-    MetaspaceGC::compute_new_size();
-    MetaspaceUtils::verify_metrics();
-  }
+  if (!ClassUnloading) return;
+  // Unload classes and purge SystemDictionary.
+  auto purged_classes = SystemDictionary::do_unloading(NULL, false /* Defer cleaning */);
+  MMTkIsAliveClosure is_alive;
+  MMTkForwardClosure forward;
+  MMTkHeap::heap()->complete_cleaning(&is_alive, &forward, purged_classes);
+  ClassLoaderDataGraph::purge();
+  // Resize and verify metaspace
+  MetaspaceGC::compute_new_size();
+  MetaspaceUtils::verify_metrics();
 }
 
-static void mmtk_gc_epilogue() {
+static void mmtk_gc_epilogue(bool unload) {
   update_pointers();
+  if (unload && ClassUnloading) {
+    mmtk_unload_classes();
+  }
   nmethod::oops_do_marking_epilogue();
   // BiasedLocking::restore_marks();
   CodeCache::gc_epilogue();
@@ -175,13 +171,6 @@ static void mmtk_resume_mutators(void *tls) {
   }
 
   log_debug(gc)("Notifying mutators blocking on Heap_lock for reference pending list...");
-  // Note: That's the ReferenceHandler thread.
-  {
-    MutexLockerEx x(Heap_lock, Mutex::_no_safepoint_check_flag);
-    if (Universe::has_reference_pending_list()) {
-      Heap_lock->notify_all();
-    }
-  }
 }
 
 static const int GC_THREAD_KIND_WORKER = 1;
@@ -351,9 +340,18 @@ static int discovered_offset() {
   return java_lang_ref_Reference::discovered_offset;
 }
 
+char data[1024];
 static char* dump_object_string(void* object) {
+  HandleMark hm;
+  ResourceMark rm;
+  if (object == NULL) return "NULL";
   oop o = (oop) object;
-  return o->print_value_string();
+
+  stringStream st(data, sizeof(data));
+  o->print_value_on(&st);
+  auto s = st.as_string();
+  strcpy(&data[0], s);
+  return &data[0];
 }
 
 static void mmtk_schedule_finalizer() {
