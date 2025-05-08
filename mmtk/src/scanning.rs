@@ -91,9 +91,6 @@ impl<const COMPRESSED: bool> Scanning<OpenJDK<COMPRESSED>> for VMScanning {
             Box::new(ScanVMThreadRoots::new(factory.clone())) as _,
             Box::new(ScanNewWeakHandleRoots::new(factory.clone())) as _,
         ];
-        if is_current_gc_nursery {
-            w.push(Box::new(ScanStringTableRoots::new(factory.clone())) as _);
-        }
         memory_manager::add_work_packets(
             crate::singleton::<COMPRESSED>(),
             WorkBucketStage::Prepare,

@@ -68,22 +68,12 @@ impl<const COMPRESSED: bool, F: RootsWorkFactory<OpenJDKSlot<COMPRESSED>>>
     fn do_work(
         &mut self,
         _worker: &mut GCWorker<OpenJDK<COMPRESSED>>,
-        mmtk: &'static MMTK<OpenJDK<COMPRESSED>>,
+        _mmtk: &'static MMTK<OpenJDK<COMPRESSED>>,
     ) {
-        let is_current_gc_nursery = mmtk
-            .get_plan()
-            .generational()
-            .is_some_and(|gen| gen.is_current_gc_nursery());
-
-        if !is_current_gc_nursery {
-            // Only scan CodeCache roots in full-heap collections.
-            return;
-        }
-
         let mut slots = Vec::with_capacity(scanning::WORK_PACKET_CAPACITY);
 
         let mut nursery_slots = 0;
-        let mut mature_slots = 0;
+        let mature_slots = 0;
 
         let mut add_roots = |roots: &[Address]| {
             for root in roots {
@@ -96,23 +86,11 @@ impl<const COMPRESSED: bool, F: RootsWorkFactory<OpenJDKSlot<COMPRESSED>>>
         };
 
         {
-            let mut mature = crate::MATURE_CODE_CACHE_ROOTS.lock().unwrap();
-
-            // Only scan mature roots in full-heap collections.
-            if !is_current_gc_nursery {
-                for roots in mature.values() {
-                    mature_slots += roots.len();
-                    add_roots(roots);
-                }
-            }
-
-            {
-                let mut nursery = crate::NURSERY_CODE_CACHE_ROOTS.lock().unwrap();
-                for (key, roots) in nursery.drain() {
-                    nursery_slots += roots.len();
-                    add_roots(&roots);
-                    mature.insert(key, roots);
-                }
+            let mut nursery = crate::NURSERY_CODE_CACHE_ROOTS.lock().unwrap();
+            for (_key, roots) in nursery.drain() {
+                nursery_slots += roots.len();
+                add_roots(&roots);
+                // mature.insert(key, roots);
             }
         }
 
@@ -121,10 +99,6 @@ impl<const COMPRESSED: bool, F: RootsWorkFactory<OpenJDKSlot<COMPRESSED>>>
         if !slots.is_empty() {
             self.factory.create_process_roots_work(slots);
         }
-        // Use the following code to scan CodeCache directly, instead of scanning the "remembered set".
-        // unsafe {
-        //     ((*UPCALLS).scan_code_cache_roots)(to_slots_closure(&mut self.factory));
-        // }
     }
 }
 
@@ -151,15 +125,7 @@ impl<const COMPRESSED: bool, F: RootsWorkFactory<OpenJDKSlot<COMPRESSED>>>
         _worker: &mut GCWorker<OpenJDK<COMPRESSED>>,
         _mmtk: &'static MMTK<OpenJDK<COMPRESSED>>,
     ) {
-        // let in_nursery = crate::singleton::<COMPRESSED>()
-        //     .get_plan()
-        //     .generational()
-        //     .is_some_and(|gen| gen.is_current_gc_nursery());
         let mut new_roots = crate::NURSERY_WEAK_HANDLE_ROOTS.lock().unwrap();
-        // if !in_nursery {
-        //     new_roots.clear();
-        //     return;
-        // }
         for slice in new_roots.chunks(scanning::WORK_PACKET_CAPACITY) {
             let slice =
                 unsafe { std::mem::transmute::<&[Address], &[OpenJDKSlot<COMPRESSED>]>(slice) };

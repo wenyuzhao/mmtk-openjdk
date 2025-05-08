@@ -34,6 +34,7 @@
 #include "gc/shared/gcTraceTime.inline.hpp"
 #include "mmtkParallelCleaning.hpp"
 #include "mmtk.h"
+#include "gc/shared/oopStorageParState.inline.hpp"
 
 // using namespace JavaClassFile;
 
@@ -70,11 +71,34 @@ StringSymbolTableUnlinkTask::~StringSymbolTableUnlinkTask() {
       "symbols: " SIZE_FORMAT " processed, " SIZE_FORMAT " removed",
       strings_processed(), strings_removed(),
       symbols_processed(), symbols_removed());
+    printf(
+          "Cleaned string and symbol table, "
+          "strings: " SIZE_FORMAT " processed, " SIZE_FORMAT " removed, "
+          "symbols: " SIZE_FORMAT " processed, " SIZE_FORMAT " removed\n",
+          strings_processed(), strings_removed(),
+          symbols_processed(), symbols_removed());
 
   // if (_process_strings) {
     StringTable::finish_dead_counter();
   // }
 }
+
+class StringTableIsAliveCounter : public BoolObjectClosure {
+  BoolObjectClosure* _real_boc;
+ public:
+  size_t _count;
+  size_t _count_total;
+  StringTableIsAliveCounter(BoolObjectClosure* boc) : _real_boc(boc), _count(0),
+                                                      _count_total(0) {}
+  bool do_object_b(oop obj) {
+    bool ret = _real_boc->do_object_b(obj);
+    if (!ret) {
+      ++_count;
+    }
+    ++_count_total;
+    return ret;
+  }
+};
 
 void StringSymbolTableUnlinkTask::work(uint worker_id) {
   int strings_processed = 0;
@@ -82,7 +106,11 @@ void StringSymbolTableUnlinkTask::work(uint worker_id) {
   int symbols_processed = 0;
   int symbols_removed = 0;
   // if (_process_strings) {
-    StringTable::possibly_parallel_unlink(&_par_state_string, _is_alive, &strings_processed, &strings_removed);
+    StringTableIsAliveCounter stiac(_is_alive);
+    _par_state_string.weak_oops_do(&stiac, _forward);
+    StringTable::inc_dead_counter(stiac._count);
+    strings_processed = (int) stiac._count_total;
+    strings_removed = (int) stiac._count;
     Atomic::add(strings_processed, &_strings_processed);
     Atomic::add(strings_removed, &_strings_removed);
   // }
