@@ -117,7 +117,7 @@ static void mmtk_stop_all_mutators(void *tls, MutatorClosure closure, bool curre
   nmethod::oops_do_marking_prologue();
 }
 
-static void update_pointers() {
+static void update_weak_processor() {
   HandleMark hm;
   MMTkIsAliveClosure is_alive;
   MMTkForwardClosure forward;
@@ -141,8 +141,8 @@ static void mmtk_unload_classes() {
 }
 
 static void mmtk_gc_epilogue(bool unload) {
-  update_pointers();
   if (unload && ClassUnloading) {
+    update_weak_processor();
     mmtk_unload_classes();
   }
   nmethod::oops_do_marking_epilogue();

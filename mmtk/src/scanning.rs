@@ -89,10 +89,10 @@ impl<const COMPRESSED: bool> Scanning<OpenJDK<COMPRESSED>> for VMScanning {
             Box::new(ScanClassLoaderDataGraphRoots::new(factory.clone())) as _,
             Box::new(ScanCodeCacheRoots::new(factory.clone())) as _,
             Box::new(ScanVMThreadRoots::new(factory.clone())) as _,
+            Box::new(ScanNewWeakHandleRoots::new(factory.clone())) as _,
         ];
         if is_current_gc_nursery {
             w.push(Box::new(ScanStringTableRoots::new(factory.clone())) as _);
-            w.push(Box::new(ScanWeakProcessorRoots::new(factory.clone())) as _);
         }
         memory_manager::add_work_packets(
             crate::singleton::<COMPRESSED>(),

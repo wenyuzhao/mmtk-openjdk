@@ -47,7 +47,6 @@ scan_roots_work!(
     ScanClassLoaderDataGraphRoots,
     scan_class_loader_data_graph_roots
 );
-scan_roots_work!(ScanWeakProcessorRoots, scan_weak_processor_roots);
 scan_roots_work!(ScanVMThreadRoots, scan_vm_thread_roots);
 
 pub struct ScanCodeCacheRoots<const COMPRESSED: bool, F: RootsWorkFactory<OpenJDKSlot<COMPRESSED>>>
@@ -126,5 +125,46 @@ impl<const COMPRESSED: bool, F: RootsWorkFactory<OpenJDKSlot<COMPRESSED>>>
         // unsafe {
         //     ((*UPCALLS).scan_code_cache_roots)(to_slots_closure(&mut self.factory));
         // }
+    }
+}
+
+pub struct ScanNewWeakHandleRoots<
+    const COMPRESSED: bool,
+    F: RootsWorkFactory<OpenJDKSlot<COMPRESSED>>,
+> {
+    factory: F,
+}
+
+impl<const COMPRESSED: bool, F: RootsWorkFactory<OpenJDKSlot<COMPRESSED>>>
+    ScanNewWeakHandleRoots<COMPRESSED, F>
+{
+    pub fn new(factory: F) -> Self {
+        Self { factory }
+    }
+}
+
+impl<const COMPRESSED: bool, F: RootsWorkFactory<OpenJDKSlot<COMPRESSED>>>
+    GCWork<OpenJDK<COMPRESSED>> for ScanNewWeakHandleRoots<COMPRESSED, F>
+{
+    fn do_work(
+        &mut self,
+        _worker: &mut GCWorker<OpenJDK<COMPRESSED>>,
+        _mmtk: &'static MMTK<OpenJDK<COMPRESSED>>,
+    ) {
+        // let in_nursery = crate::singleton::<COMPRESSED>()
+        //     .get_plan()
+        //     .generational()
+        //     .is_some_and(|gen| gen.is_current_gc_nursery());
+        let mut new_roots = crate::NURSERY_WEAK_HANDLE_ROOTS.lock().unwrap();
+        // if !in_nursery {
+        //     new_roots.clear();
+        //     return;
+        // }
+        for slice in new_roots.chunks(scanning::WORK_PACKET_CAPACITY) {
+            let slice =
+                unsafe { std::mem::transmute::<&[Address], &[OpenJDKSlot<COMPRESSED>]>(slice) };
+            self.factory.create_process_roots_work(slice.to_vec());
+        }
+        new_roots.clear();
     }
 }

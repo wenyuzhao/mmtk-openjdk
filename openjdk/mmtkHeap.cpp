@@ -554,7 +554,8 @@ void MMTkHeap::complete_cleaning(BoolObjectClosure* is_alive, OopClosure* forwar
   _workers->run_task(&unlink_task);
 }
 
-/*
- * files with prints currently:
- * collectedHeap.inline.hpp, mmtkHeap.cpp,
- */
+void MMTkHeap::register_new_weak_handle(oop* handle) {
+  if (REQUIRES_WEAK_HANDLE_BARRIER) {
+    mmtk_register_new_weak_handle((void*) handle);
+  }
+}

@@ -193,6 +193,7 @@ lazy_static! {
         let ret = mmtk::memory_manager::mmtk_init(&builder);
         MMTK_INITIALIZED.store(true, std::sync::atomic::Ordering::SeqCst);
         slots::initialize_compressed_oops_base_and_shift();
+        unsafe { REQUIRES_WEAK_HANDLE_BARRIER = ret.get_plan().generational().is_some() };
         *ret
     };
     pub static ref SINGLETON_UNCOMPRESSED: MMTK<OpenJDK<false>> = {
@@ -201,6 +202,7 @@ lazy_static! {
         assert!(!MMTK_INITIALIZED.load(Ordering::Relaxed));
         let ret = mmtk::memory_manager::mmtk_init(&builder);
         MMTK_INITIALIZED.store(true, std::sync::atomic::Ordering::SeqCst);
+        unsafe { REQUIRES_WEAK_HANDLE_BARRIER = ret.get_plan().generational().is_some() }
         *ret
     };
 }
@@ -223,11 +225,15 @@ fn singleton<const COMPRESSED: bool>() -> &'static MMTK<OpenJDK<COMPRESSED>> {
 pub static MMTK_MARK_COMPACT_HEADER_RESERVED_IN_BYTES: usize =
     mmtk::util::alloc::MarkCompactAllocator::<OpenJDK<false>>::HEADER_RESERVED_IN_BYTES;
 
+#[no_mangle]
+pub static mut REQUIRES_WEAK_HANDLE_BARRIER: bool = false;
+
 lazy_static! {
     /// A global storage for all the cached CodeCache roots added since the last GC.
     static ref NURSERY_CODE_CACHE_ROOTS: Mutex<HashMap<Address, Vec<Address>>> = Mutex::new(HashMap::new());
     /// A global storage for all the cached CodeCache roots added before the last GC.
     static ref MATURE_CODE_CACHE_ROOTS: Mutex<HashMap<Address, Vec<Address>>> = Mutex::new(HashMap::new());
+    static ref NURSERY_WEAK_HANDLE_ROOTS: Mutex<Vec<Address>> = Mutex::new(Vec::new());
 }
 
 fn set_compressed_pointer_vm_layout(builder: &mut MMTKBuilder) {

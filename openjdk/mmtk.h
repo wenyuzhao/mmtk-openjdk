@@ -23,6 +23,7 @@ extern const uintptr_t GLOBAL_SIDE_METADATA_VM_BASE_ADDRESS;
 extern const uintptr_t VO_BIT_ADDRESS;
 extern const size_t MMTK_MARK_COMPACT_HEADER_RESERVED_IN_BYTES;
 extern const uintptr_t FREE_LIST_ALLOCATOR_SIZE;
+extern bool REQUIRES_WEAK_HANDLE_BARRIER;
 
 extern const char* get_mmtk_version();
 
@@ -112,6 +113,8 @@ extern void* mmtk_get_forwarded_ref(void* object);
 extern size_t mmtk_add_nmethod_oop(void* object);
 extern size_t mmtk_register_nmethod(void* nm);
 extern size_t mmtk_unregister_nmethod(void* nm);
+
+extern void mmtk_register_new_weak_handle(void* entry);
 
 /**
  * VM Accounting
