@@ -302,7 +302,8 @@ void MMTkHeap::collect(GCCause::Cause cause) {//later when gc is implemented in 
       JNICritical_lock->_safepoint_check_required = safepoint_check_required;
     #endif
   }
-  handle_user_collection_request((MMTk_Mutator) &Thread::current()->third_party_heap_mutator, cause != GCCause::_java_lang_system_gc);
+  auto force = cause == GCCause::_metadata_GC_threshold || cause == GCCause::_metadata_GC_clear_soft_refs;
+  handle_user_collection_request((MMTk_Mutator) &Thread::current()->third_party_heap_mutator, force);
   // guarantee(false, "collect not supported");
 }
 
