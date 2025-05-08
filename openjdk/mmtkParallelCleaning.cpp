@@ -70,13 +70,7 @@ StringSymbolTableUnlinkTask::~StringSymbolTableUnlinkTask() {
       "strings: " SIZE_FORMAT " processed, " SIZE_FORMAT " removed, "
       "symbols: " SIZE_FORMAT " processed, " SIZE_FORMAT " removed",
       strings_processed(), strings_removed(),
-      symbols_processed(), symbols_removed());
-    printf(
-          "Cleaned string and symbol table, "
-          "strings: " SIZE_FORMAT " processed, " SIZE_FORMAT " removed, "
-          "symbols: " SIZE_FORMAT " processed, " SIZE_FORMAT " removed\n",
-          strings_processed(), strings_removed(),
-          symbols_processed(), symbols_removed());
+      symbols_processed(), symbols_removed()); 
 
   // if (_process_strings) {
     StringTable::finish_dead_counter();
