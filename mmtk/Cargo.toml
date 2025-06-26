@@ -43,7 +43,7 @@ cfg-if = "1.0"
 # - change branch
 # - change repo name
 # But other changes including adding/removing whitespaces in commented lines may break the CI.
-# mmtk = { git = "https://github.com/wenyuzhao/mmtk-core.git", rev = "1c94b10853f683641f9c0a1005445fad42f9c6f5" }
+# mmtk = { git = "https://github.com/wenyuzhao/mmtk-core.git", rev = "138c204e98ba896e519d6a0c3ebddde9132732bc" }
 # Uncomment the following to build locally
 mmtk = { path = "../../mmtk-core" }
 
@@ -51,7 +51,7 @@ mmtk = { path = "../../mmtk-core" }
 built = { version = "0.7.1", features = ["git2"] }
 
 [features]
-default = []
+default = ["g3_compatibilities"]
 release_debug_assertions = []
 mmtk_extreme_assertions = ["mmtk/extreme_assertions"]
 nogc_lock_free = ["mmtk/nogc_lock_free"]
@@ -64,7 +64,7 @@ roots_breakdown = []
 same_stw_and_conc_threads = []
 lxr_6_conc_workers = []
 lxr_12_conc_workers = []
-g3_compatibilities = []
+g3_compatibilities = ["mmtk/g3_compatibilities"]
 
 # Place the mark bit in the header of objects instead of on the side.
 mark_bit_in_header = []
