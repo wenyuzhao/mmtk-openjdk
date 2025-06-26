@@ -528,7 +528,6 @@ checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 [[package]]
 name = "mmtk"
 version = "0.26.0"
-source = "git+https://github.com/wenyuzhao/mmtk-core.git?rev=138c204e98ba896e519d6a0c3ebddde9132732bc#138c204e98ba896e519d6a0c3ebddde9132732bc"
 dependencies = [
  "atomic",
  "atomic-traits",
@@ -553,6 +552,7 @@ dependencies = [
  "num_cpus",
  "pfm",
  "portable-atomic",
+ "probe",
  "regex",
  "spin",
  "strum",
@@ -563,7 +563,6 @@ dependencies = [
 [[package]]
 name = "mmtk-macros"
 version = "0.26.0"
-source = "git+https://github.com/wenyuzhao/mmtk-core.git?rev=138c204e98ba896e519d6a0c3ebddde9132732bc#138c204e98ba896e519d6a0c3ebddde9132732bc"
 dependencies = [
  "proc-macro-error",
  "proc-macro2",
@@ -690,6 +689,12 @@ dependencies = [
  "proc-macro2",
  "syn 2.0.66",
 ]
+
+[[package]]
+name = "probe"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d8e2d2444b730c8f027344c60f9e1f1554d7a3342df9bdd425142ed119a6e5a3"
 
 [[package]]
 name = "proc-macro-error"
