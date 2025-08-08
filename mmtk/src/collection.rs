@@ -86,9 +86,9 @@ impl<const COMPRESSED: bool> Collection<OpenJDK<COMPRESSED>> for VMCollection {
     }
 
     fn update_weak_processor(lxr: bool) {
-        unsafe {
-            ((*UPCALLS).update_weak_processor)(lxr);
-        }
+        // unsafe {
+        //     ((*UPCALLS).update_weak_processor)(lxr);
+        // }
     }
 
     fn clear_cld_claimed_marks() {
@@ -103,10 +103,10 @@ impl<const COMPRESSED: bool> Collection<OpenJDK<COMPRESSED>> for VMCollection {
 
     fn vm_release(do_unloading: bool) {
         unsafe {
-            if do_unloading {
-                gc_log!("    - unload_classes");
-                ((*UPCALLS).unload_classes)();
-            }
+            // if do_unloading {
+            //     gc_log!("    - unload_classes");
+            //     ((*UPCALLS).unload_classes)();
+            // }
             gc_log!("    - gc_epilogue");
             ((*UPCALLS).gc_epilogue)();
         }

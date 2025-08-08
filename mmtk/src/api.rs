@@ -614,11 +614,11 @@ pub extern "C" fn mmtk_verbose() -> usize {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn mmtk_register_new_weak_handle(oop: *const Oop) {
-    let addr = if crate::use_compressed_oops() {
-        Address::from_usize(oop as usize | (1 << 63))
-    } else {
-        Address::from_ptr(oop)
-    };
-    crate::NURSERY_WEAK_HANDLE_ROOTS.lock().unwrap().push(addr);
+pub unsafe extern "C" fn mmtk_register_new_weak_handle(_oop: *const Oop) {
+    // let addr = if crate::use_compressed_oops() {
+    //     Address::from_usize(oop as usize | (1 << 63))
+    // } else {
+    //     Address::from_ptr(oop)
+    // };
+    // crate::NURSERY_WEAK_HANDLE_ROOTS.lock().unwrap().push(addr);
 }

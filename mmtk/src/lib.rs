@@ -126,11 +126,9 @@ pub struct OpenJDK_Upcalls {
     pub scan_aot_loader_roots: extern "C" fn(closure: SlotsClosure),
     pub scan_system_dictionary_roots: extern "C" fn(closure: SlotsClosure),
     pub scan_code_cache_roots: extern "C" fn(closure: SlotsClosure),
-    pub scan_string_table_roots: extern "C" fn(closure: SlotsClosure, rc_non_stuck_objs_only: bool),
-    pub scan_class_loader_data_graph_roots:
-        extern "C" fn(closure: SlotsClosure, weak_closure: SlotsClosure, scan_weak: bool),
-    pub scan_weak_processor_roots:
-        extern "C" fn(closure: SlotsClosure, rc_non_stuck_objs_only: bool),
+    pub scan_string_table_roots: extern "C" fn(closure: SlotsClosure),
+    pub scan_class_loader_data_graph_roots: extern "C" fn(closure: SlotsClosure),
+    pub scan_weak_processor_roots: extern "C" fn(closure: SlotsClosure),
     pub scan_vm_thread_roots: extern "C" fn(closure: SlotsClosure),
     pub number_of_mutators: extern "C" fn() -> usize,
     pub schedule_finalizer: extern "C" fn(),
