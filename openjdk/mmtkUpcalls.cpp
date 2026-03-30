@@ -200,6 +200,31 @@ static void mmtk_clear_claimed_marks() {
   ClassLoaderDataGraph::clear_claimed_marks();
 }
 
+
+class MMTkUpdateClosure : public OopClosure {
+ public:
+  inline virtual void do_oop(oop* slot) override {
+    const auto o = *slot;
+    if (o == NULL) return;
+    if (mmtk_is_live((void*) o) == 0) {
+      *slot = NULL;
+    } else if (MMTkForwardClosure::is_forwarded(MMTkForwardClosure::read_forwarding_word(o))) {
+      *slot = MMTkForwardClosure::extract_forwarding_pointer(MMTkForwardClosure::read_forwarding_word(o));
+    }
+  }
+  inline virtual void do_oop(narrowOop* slot) override {
+    narrowOop heap_oop = RawAccess<>::oop_load(slot);
+    if (CompressedOops::is_null(heap_oop)) return;
+    oop o = CompressedOops::decode_not_null(heap_oop);
+    if (o == NULL) return;
+    if (mmtk_is_live((void*) o) == 0) {
+      RawAccess<>::oop_store(slot, CompressedOops::encode(oop(NULL)));
+    } else if (MMTkForwardClosure::is_forwarded(MMTkForwardClosure::read_forwarding_word(o))) {
+      RawAccess<>::oop_store(slot, CompressedOops::encode_not_null(MMTkForwardClosure::extract_forwarding_pointer(MMTkForwardClosure::read_forwarding_word(o))));
+    }
+  }
+};
+
 static void mmtk_update_weak_processor(bool lxr) {
   HandleMark hm;
   if (lxr) {
@@ -209,6 +234,11 @@ static void mmtk_update_weak_processor(bool lxr) {
     MMTkIsAliveClosure is_alive;
     MMTkForwardClosure forward;
     WeakProcessor::weak_oops_do(&is_alive, &forward);
+
+    MMTkUpdateClosure cl;
+    MarkingCodeBlobClosure cb_cl(&cl, false);
+    CodeCache::blobs_do(&cb_cl);
+    MMTkHeap::heap()->update_string_table(&cl);
   }
 }
 

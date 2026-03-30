@@ -372,4 +372,16 @@ void ParallelCleaningTask::work(uint worker_id) {
   LOG_CLS_UNLOAD("[complete_cleaning %d] finish", worker_id);
 }
 
+
+
+ParallelStringTableUpdatingTask::ParallelStringTableUpdatingTask(OopClosure* cl) :
+  AbstractGangTask("Parallel StringTable Updating"),
+  _par_state_string(StringTable::weak_storage()),
+  _cl(cl)
+{}
+
+void ParallelStringTableUpdatingTask::work(uint worker_id) {
+  StringTable::possibly_parallel_oops_do(&_par_state_string, _cl);
+}
+
 }

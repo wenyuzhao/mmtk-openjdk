@@ -141,7 +141,7 @@ impl<const COMPRESSED: bool> Scanning<OpenJDK<COMPRESSED>> for VMScanning {
             Box::new(ScanJvmtiExportRoots::new(factory.clone())) as _,
             Box::new(ScanAOTLoaderRoots::new(factory.clone())) as _,
             Box::new(ScanSystemDictionaryRoots::new(factory.clone())) as _,
-            Box::new(ScanCodeCacheRoots::new(factory.clone())) as _,
+            Box::new(ScanYoungCodeCacheRoots::new(factory.clone())) as _,
             Box::new(ScanClassLoaderDataGraphRoots::new(factory.clone())) as _,
             Box::new(ScanVMThreadRoots::new(factory.clone())) as _,
         ];
@@ -150,13 +150,6 @@ impl<const COMPRESSED: bool> Scanning<OpenJDK<COMPRESSED>> for VMScanning {
             .requires_weak_root_scanning()
         {
             w.push(Box::new(ScanNewWeakHandleRoots::new(factory.clone())) as _);
-        }
-        if crate::singleton::<COMPRESSED>()
-            .get_plan()
-            .current_gc_should_perform_class_unloading()
-        {
-            w.push(Box::new(ScanWeakStringTableRoots::new(factory.clone())) as _);
-            w.push(Box::new(ScanWeakCodeCacheRoots::new(factory.clone())) as _);
         }
         memory_manager::add_work_packets(
             crate::singleton::<COMPRESSED>(),

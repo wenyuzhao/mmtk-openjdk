@@ -215,12 +215,12 @@ impl<VM: VMBinding, F: RootsWorkFactory<VM::VMSlot>> GCWork<VM>
     }
 }
 
-pub struct ScanCodeCacheRoots<S: Slot, F: RootsWorkFactory<S>> {
+pub struct ScanYoungCodeCacheRoots<S: Slot, F: RootsWorkFactory<S>> {
     factory: F,
     _p: PhantomData<S>,
 }
 
-impl<S: Slot, F: RootsWorkFactory<S>> ScanCodeCacheRoots<S, F> {
+impl<S: Slot, F: RootsWorkFactory<S>> ScanYoungCodeCacheRoots<S, F> {
     pub fn new(factory: F) -> Self {
         Self {
             factory,
@@ -230,7 +230,7 @@ impl<S: Slot, F: RootsWorkFactory<S>> ScanCodeCacheRoots<S, F> {
 }
 
 impl<VM: VMBinding, F: RootsWorkFactory<VM::VMSlot>> GCWork<VM>
-    for ScanCodeCacheRoots<VM::VMSlot, F>
+    for ScanYoungCodeCacheRoots<VM::VMSlot, F>
 {
     fn do_work(&mut self, _worker: &mut GCWorker<VM>, _mmtk: &'static MMTK<VM>) {
         let t = if cfg!(feature = "roots_breakdown") {
@@ -307,44 +307,6 @@ fn to_slots_closure_weak<S: Slot, F: RootsWorkFactory<S>>(factory: &mut F) -> Sl
     }
 }
 
-pub struct ScanWeakStringTableRoots<S: Slot, F: RootsWorkFactory<S>> {
-    factory: F,
-    _p: PhantomData<S>,
-}
-
-impl<S: Slot, F: RootsWorkFactory<S>> ScanWeakStringTableRoots<S, F> {
-    pub fn new(factory: F) -> Self {
-        Self {
-            factory,
-            _p: PhantomData,
-        }
-    }
-}
-
-impl<VM: VMBinding, F: RootsWorkFactory<VM::VMSlot>> GCWork<VM>
-    for ScanWeakStringTableRoots<VM::VMSlot, F>
-{
-    fn do_work(&mut self, _worker: &mut GCWorker<VM>, mmtk: &'static MMTK<VM>) {
-        let t = if cfg!(feature = "roots_breakdown") {
-            Some(std::time::SystemTime::now())
-        } else {
-            None
-        };
-        let scan_all_strong_roots = mmtk.get_plan().current_gc_should_perform_class_unloading();
-        assert!(scan_all_strong_roots);
-        unsafe {
-            ((*UPCALLS).scan_string_table_roots)(
-                to_slots_closure_weak::<VM::VMSlot, F>(&mut self.factory),
-                false,
-            );
-        }
-        if cfg!(feature = "roots_breakdown") {
-            let ms = t.unwrap().elapsed().unwrap().as_micros() as f32 / 1000f32;
-            report_roots("WeakStringTableRoots", ms);
-        }
-    }
-}
-
 #[allow(unused)]
 pub struct ScanWeakProcessorRoots<S: Slot, F: RootsWorkFactory<S>> {
     factory: F,
@@ -381,63 +343,6 @@ impl<VM: VMBinding, F: RootsWorkFactory<VM::VMSlot>> GCWork<VM>
         if cfg!(feature = "roots_breakdown") {
             let ms = t.unwrap().elapsed().unwrap().as_micros() as f32 / 1000f32;
             report_roots("WeakProcessorRoots", ms);
-        }
-    }
-}
-
-pub struct ScanWeakCodeCacheRoots<S: Slot, F: RootsWorkFactory<S>> {
-    factory: F,
-    _p: PhantomData<S>,
-}
-
-impl<S: Slot, F: RootsWorkFactory<S>> ScanWeakCodeCacheRoots<S, F> {
-    pub fn new(factory: F) -> Self {
-        Self {
-            factory,
-            _p: PhantomData,
-        }
-    }
-}
-
-impl<VM: VMBinding, F: RootsWorkFactory<VM::VMSlot>> GCWork<VM>
-    for ScanWeakCodeCacheRoots<VM::VMSlot, F>
-{
-    fn do_work(&mut self, _worker: &mut GCWorker<VM>, mmtk: &'static MMTK<VM>) {
-        let t = if cfg!(feature = "roots_breakdown") {
-            Some(std::time::SystemTime::now())
-        } else {
-            None
-        };
-        let scan_all_strong_roots = mmtk.get_plan().current_gc_should_perform_class_unloading();
-        assert!(scan_all_strong_roots);
-
-        let mut slots = Vec::with_capacity(F::BUFFER_SIZE);
-        let mature = crate::MATURE_CODE_CACHE_ROOTS.lock().unwrap();
-        let mut c = 0;
-        // Young roots
-        for (_key, roots) in &*mature {
-            for r in roots {
-                slots.push(VM::VMSlot::from_address(*r));
-                if slots.len() >= F::BUFFER_SIZE {
-                    if cfg!(feature = "roots_breakdown") {
-                        c += slots.len();
-                    }
-                    self.factory
-                        .create_process_roots_work(std::mem::take(&mut slots), RootKind::Weak);
-                    slots.reserve(F::BUFFER_SIZE);
-                }
-            }
-        }
-        if !slots.is_empty() {
-            if cfg!(feature = "roots_breakdown") {
-                c += slots.len();
-            }
-            self.factory
-                .create_process_roots_work(slots, RootKind::Weak);
-        }
-        if cfg!(feature = "roots_breakdown") {
-            let ms = t.unwrap().elapsed().unwrap().as_micros() as f32 / 1000f32;
-            eprintln!(" - WeakodeCacheRoots roots count: {} ({:.3})", c, ms);
         }
     }
 }

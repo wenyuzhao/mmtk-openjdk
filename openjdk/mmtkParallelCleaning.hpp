@@ -163,6 +163,14 @@ public:
   void work(uint worker_id);
 };
 
+class ParallelStringTableUpdatingTask : public AbstractGangTask {
+  OopStorage::ParState<false /* concurrent */, false /* const */> _par_state_string;
+  OopClosure* _cl;
+public:
+  ParallelStringTableUpdatingTask(OopClosure* cl);
+  void work(uint worker_id);
+};
+
 }
 
 #endif // MMTK_OPENJDK_MMTK_PARALLELCLEANING_HPP

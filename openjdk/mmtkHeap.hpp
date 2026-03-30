@@ -227,6 +227,7 @@ public:
   void scan_vm_thread_roots(OopClosure& cl);
 
   void complete_cleaning(BoolObjectClosure* is_alive, OopClosure* forward, bool class_unloading_occurred);
+  void update_string_table(OopClosure* cl);
 
   jlong _last_gc_time;
 };
