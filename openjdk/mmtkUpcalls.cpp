@@ -233,12 +233,8 @@ static void mmtk_update_weak_processor(bool lxr) {
   } else {
     MMTkIsAliveClosure is_alive;
     MMTkForwardClosure forward;
-    WeakProcessor::weak_oops_do(&is_alive, &forward);
-
     MMTkUpdateClosure cl;
-    MarkingCodeBlobClosure cb_cl(&cl, false);
-    CodeCache::blobs_do(&cb_cl);
-    MMTkHeap::heap()->update_string_table(&cl);
+    MMTkHeap::heap()->update_string_table(&is_alive, &forward, &cl);
   }
 }
 

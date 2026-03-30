@@ -34,6 +34,10 @@
 #include "gc/shared/gcTraceTime.inline.hpp"
 #include "mmtkParallelCleaning.hpp"
 #include "mmtk.h"
+#if INCLUDE_JFR
+#include "jfr/jfr.hpp"
+#endif
+#include "gc/shared/oopStorage.inline.hpp"
 
 using namespace JavaClassFile;
 
@@ -374,13 +378,31 @@ void ParallelCleaningTask::work(uint worker_id) {
 
 
 
-ParallelStringTableUpdatingTask::ParallelStringTableUpdatingTask(OopClosure* cl) :
+ParallelStringTableUpdatingTask::ParallelStringTableUpdatingTask(BoolObjectClosure* is_alive, OopClosure* fwd, OopClosure* cl) :
   AbstractGangTask("Parallel StringTable Updating"),
   _par_state_string(StringTable::weak_storage()),
+  _is_alive(is_alive),
+  _fwd(fwd),
   _cl(cl)
 {}
 
 void ParallelStringTableUpdatingTask::work(uint worker_id) {
+  if (!Atomic::xchg(1, &_task_code_cache)) {
+    MarkingCodeBlobClosure cb_cl(_cl, false);
+    CodeCache::blobs_do(&cb_cl);
+  }
+  if (!Atomic::xchg(1, &_task_jni_handles)) {
+    JNIHandles::weak_oops_do(_is_alive, _fwd);
+  }
+  if (!Atomic::xchg(1, &_task_jvmti_export)) {
+    JvmtiExport::weak_oops_do(_is_alive, _fwd);
+  }
+  if (!Atomic::xchg(1, &_task_system_dictionary)) {
+    SystemDictionary::vm_weak_oop_storage()->weak_oops_do(_is_alive, _fwd);
+  }
+  if (!Atomic::xchg(1, &_task_jfr)) {
+    JFR_ONLY(Jfr::weak_oops_do(_is_alive, _fwd);)
+  }
   StringTable::possibly_parallel_oops_do(&_par_state_string, _cl);
 }
 

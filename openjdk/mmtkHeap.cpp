@@ -629,10 +629,10 @@ void MMTkHeap::complete_cleaning(BoolObjectClosure* is_alive, OopClosure* forwar
   _workers->run_task(&unlink_task);
 }
 
-void MMTkHeap::update_string_table(OopClosure* cl) {
+void MMTkHeap::update_string_table(BoolObjectClosure* is_alive, OopClosure* fwd, OopClosure* cl) {
   ResourceMark rm;
   HandleMark hm;
-  mmtk::ParallelStringTableUpdatingTask updating_task(cl);
+  mmtk::ParallelStringTableUpdatingTask updating_task(is_alive, fwd, cl);
   _workers->run_task(&updating_task);
 }
 

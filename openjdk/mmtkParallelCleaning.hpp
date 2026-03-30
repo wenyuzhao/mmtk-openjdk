@@ -165,9 +165,17 @@ public:
 
 class ParallelStringTableUpdatingTask : public AbstractGangTask {
   OopStorage::ParState<false /* concurrent */, false /* const */> _par_state_string;
+  BoolObjectClosure* _is_alive;
+  OopClosure* _fwd;
   OopClosure* _cl;
+  int _num_workers;
+  int _task_jni_handles = 0;
+  int _task_jvmti_export = 0;
+  int _task_system_dictionary = 0;
+  int _task_jfr = 0;
+  int _task_code_cache = 0;
 public:
-  ParallelStringTableUpdatingTask(OopClosure* cl);
+  ParallelStringTableUpdatingTask(BoolObjectClosure* is_alive, OopClosure* fwd, OopClosure* cl);
   void work(uint worker_id);
 };
 
