@@ -160,10 +160,11 @@ void MMTkBarrierSetAssembler::generate_c1_write_barrier_runtime_stub(StubAssembl
   //                        t2, a0-a7,   t3-t6
   __ push_call_clobbered_registers();
 
+  __ la(c_rarg3, Address(xthread, in_bytes(JavaThread::third_party_heap_mutator_offset())));
   if (mmtk_enable_barrier_fastpath) {
-    __ call_VM_leaf(FN_ADDR(MMTkBarrierSetRuntime::object_reference_write_slow_call), src, slot, new_val);
+    __ call_VM_leaf(FN_ADDR(mmtk_object_reference_write_slow), src, slot, new_val);
   } else {
-    __ call_VM_leaf(FN_ADDR(MMTkBarrierSetRuntime::object_reference_write_post_call), src, slot, new_val);
+    __ call_VM_leaf(FN_ADDR(mmtk_object_reference_write_post), src, slot, new_val);
   }
 
   __ pop_call_clobbered_registers();

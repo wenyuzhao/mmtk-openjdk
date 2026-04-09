@@ -27,6 +27,7 @@
 #include "mmtkBarrierSet.hpp"
 #include "mmtkBarrierSetC1.hpp"
 #include "mmtkMutator.hpp"
+#include "mmtkHeap.hpp"
 #include "runtime/sharedRuntime.hpp"
 #include "utilities/macros.hpp"
 #include "c1/c1_LIRAssembler.hpp"
@@ -150,7 +151,7 @@ void MMTkBarrierSetAssembler::eden_allocate(MacroAssembler* masm, Register threa
 
 #define __ sasm->
 
-void MMTkBarrierSetAssembler::generate_c1_runtime_stub_general(StubAssembler* sasm, const char* name, address entry_point, int argc) {
+void MMTkBarrierSetAssembler::generate_c1_runtime_stub_general(StubAssembler* sasm, const char* name, address entry_point, int argc, bool do_code_patch) {
   __ prologue(name, false);
   __ save_live_registers_no_oop_map(true);
 
@@ -161,26 +162,43 @@ void MMTkBarrierSetAssembler::generate_c1_runtime_stub_general(StubAssembler* sa
     guarantee(false, "Too many args");
   }
 
-  __ call_VM_leaf_base(entry_point, 3);
+  if (do_code_patch) {
+    // C1 may emit a store barrier before the field offset is resolved (e.g. for putfield on an
+    // unresolved field). In that case the slot address is not yet known, so we cannot pass it to
+    // the normal barrier slow-path. Instead, we conservatively treat the entire object as modified
+    // via object_probable_write, which logs all fields. The field offset will be patched later by
+    // the C1 runtime when the class is resolved.
+    __ call_VM_leaf(FN_ADDR(MMTkBarrierSetRuntime::object_probable_write_pre_call), c_rarg0);
+  } else {
+    // Load mutator from thread-local storage as the last argument, then call Rust directly.
+    Address mutator(r15_thread, in_bytes(JavaThread::third_party_heap_mutator_offset()));
+    Register mutator_reg = (argc == 1) ? c_rarg1 : (argc == 2) ? c_rarg2 : c_rarg3;
+    __ lea(mutator_reg, mutator);
+    __ call_VM_leaf_base(entry_point, argc + 1);
+  }
 
   __ restore_live_registers(true);
   __ epilogue();
 }
 
 void MMTkBarrierSetAssembler::generate_c1_load_reference_runtime_stub(StubAssembler* sasm) {
-  generate_c1_runtime_stub_general(sasm, "c1_load_reference_runtime_stub", FN_ADDR(MMTkBarrierSetRuntime::load_reference_call), 1);
+  generate_c1_runtime_stub_general(sasm, "c1_load_reference_runtime_stub", FN_ADDR(mmtk_load_reference), 1);
 }
 
 void MMTkBarrierSetAssembler::generate_c1_object_reference_write_pre_runtime_stub(StubAssembler* sasm) {
-  generate_c1_runtime_stub_general(sasm, "c1_object_reference_write_pre_stub", FN_ADDR(MMTkBarrierSetRuntime::object_reference_write_pre_call), 3);
+  generate_c1_runtime_stub_general(sasm, "c1_object_reference_write_pre_stub", FN_ADDR(mmtk_object_reference_write_slow), 3);
+}
+
+void MMTkBarrierSetAssembler::generate_c1_object_reference_write_pre_runtime_stub_with_patch_fix(StubAssembler* sasm) {
+  generate_c1_runtime_stub_general(sasm, "c1_object_reference_write_pre_stub", FN_ADDR(mmtk_object_reference_write_slow), 3, true);
 }
 
 void MMTkBarrierSetAssembler::generate_c1_object_reference_write_post_runtime_stub(StubAssembler* sasm) {
-  generate_c1_runtime_stub_general(sasm, "c1_object_reference_write_post_stub", FN_ADDR(MMTkBarrierSetRuntime::object_reference_write_post_call), 3);
+  generate_c1_runtime_stub_general(sasm, "c1_object_reference_write_post_stub", FN_ADDR(mmtk_object_reference_write_slow), 3);
 }
 
 void MMTkBarrierSetAssembler::generate_c1_object_reference_write_slow_runtime_stub(StubAssembler* sasm) {
-  generate_c1_runtime_stub_general(sasm, "c1_object_reference_write_slow_stub", FN_ADDR(MMTkBarrierSetRuntime::object_reference_write_slow_call), 3);
+  generate_c1_runtime_stub_general(sasm, "c1_object_reference_write_slow_stub", FN_ADDR(mmtk_object_reference_write_slow), 3);
 }
 
 #undef __

@@ -2,6 +2,7 @@
 
 #include "c1/c1_LIRAssembler.hpp"
 #include "c1/c1_MacroAssembler.hpp"
+#include "mmtkMutator.hpp"
 
 #include "utilities/macros.hpp"
 #include CPU_HEADER(mmtkUnlogBitBarrierSetAssembler)
@@ -58,12 +59,13 @@ void MMTkUnlogBitBarrierSetAssembler::object_reference_write_pre_or_post(MacroAs
   // target, we will need to decompress it before passing it to the barrier slow path.
   __ mov(c_rarg1, zr);
   __ mov(c_rarg2, zr);
+  __ lea(c_rarg3, Address(rthread, in_bytes(JavaThread::third_party_heap_mutator_offset())));
 
-  address entry_point = mmtk_enable_barrier_fastpath ? FN_ADDR(MMTkBarrierSetRuntime::object_reference_write_slow_call)
-                      : pre                          ? FN_ADDR(MMTkBarrierSetRuntime::object_reference_write_pre_call)
-                      :                                FN_ADDR(MMTkBarrierSetRuntime::object_reference_write_post_call);
+  address entry_point = mmtk_enable_barrier_fastpath ? FN_ADDR(mmtk_object_reference_write_slow)
+                      : pre                          ? FN_ADDR(mmtk_object_reference_write_pre)
+                      :                                FN_ADDR(mmtk_object_reference_write_post);
 
-  __ call_VM_leaf(entry_point, 3);
+  __ call_VM_leaf(entry_point, 4);
 
   if (pre) {
     __ pop_call_clobbered_registers();

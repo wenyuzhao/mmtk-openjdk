@@ -43,6 +43,8 @@ extern bool mmtk_enable_allocation_fastpath;
 extern bool mmtk_enable_barrier_fastpath;
 extern bool mmtk_enable_reference_load_barrier;
 
+const intptr_t SIDE_METADATA_BASE_ADDRESS = (intptr_t) GLOBAL_SIDE_METADATA_VM_BASE_ADDRESS;
+
 const intptr_t VO_BIT_BASE_ADDRESS = VO_BIT_ADDRESS;
 
 struct MMTkAllocatorOffsets {
@@ -63,26 +65,16 @@ MMTkAllocatorOffsets get_tlab_top_and_end_offsets(AllocatorSelector selector);
 
 class MMTkBarrierSetRuntime: public CHeapObj<mtGC> {
 public:
-  /// Weak ref load barrier
-  static void load_reference_call(void* ref);
-  /// Generic pre-write barrier. Called by fast-paths.
-  static void object_reference_write_pre_call(void* src, void* slot, void* target);
-  /// Generic post-write barrier. Called by fast-paths.
-  static void object_reference_write_post_call(void* src, void* slot, void* target);
-  /// Generic slow-path. Called by fast-paths.
-  static void object_reference_write_slow_call(void* src, void* slot, void* target);
-  /// Generic arraycopy post-barrier. Called by fast-paths.
-  static void object_reference_array_copy_pre_call(void* src, void* dst, size_t count);
-  /// Generic arraycopy pre-barrier. Called by fast-paths.
-  static void object_reference_array_copy_post_call(void* src, void* dst, size_t count);
+  static void object_probable_write_pre_call(void* obj);
   /// Check if the address is a slow-path function.
   virtual bool is_slow_path_call(address call) const {
-    return call == CAST_FROM_FN_PTR(address, object_reference_write_pre_call)
-        || call == CAST_FROM_FN_PTR(address, object_reference_write_post_call)
-        || call == CAST_FROM_FN_PTR(address, object_reference_write_slow_call)
-        || call == CAST_FROM_FN_PTR(address, object_reference_array_copy_pre_call)
-        || call == CAST_FROM_FN_PTR(address, object_reference_array_copy_post_call)
-        || call == CAST_FROM_FN_PTR(address, load_reference_call);
+    return call == CAST_FROM_FN_PTR(address, mmtk_object_reference_write_pre)
+        || call == CAST_FROM_FN_PTR(address, mmtk_object_reference_write_post)
+        || call == CAST_FROM_FN_PTR(address, mmtk_object_reference_write_slow)
+        || call == CAST_FROM_FN_PTR(address, mmtk_array_copy_pre)
+        || call == CAST_FROM_FN_PTR(address, mmtk_array_copy_post)
+        || call == CAST_FROM_FN_PTR(address, mmtk_load_reference)
+        || call == CAST_FROM_FN_PTR(address, object_probable_write_pre_call);
   }
 
   /// Full pre-barrier
@@ -133,7 +125,7 @@ class MMTkBarrierSet : public BarrierSet {
   MMTkBarrierSetRuntime* _runtime;
 
 protected:
-  virtual void write_ref_array_work(MemRegion mr) ;
+  virtual void write_ref_array_work(MemRegion mr);
 
 public:
   MMTkBarrierSet(MemRegion whole_heap);
@@ -256,7 +248,7 @@ public:
       T* src = arrayOopDesc::obj_offset_to_raw(src_obj, src_offset_in_bytes, src_raw);
       T* dst = arrayOopDesc::obj_offset_to_raw(dst_obj, dst_offset_in_bytes, dst_raw);
       runtime()->object_reference_array_copy_pre((oop*) src, (oop*) dst, length);
-      bool result = Raw::oop_arraycopy(src_obj, src_offset_in_bytes, src_raw,
+      bool result = Raw::oop_arraycopy_in_heap(src_obj, src_offset_in_bytes, src_raw,
                                        dst_obj, dst_offset_in_bytes, dst_raw,
                                        length);
       runtime()->object_reference_array_copy_post((oop*) src, (oop*) dst, length);
@@ -265,7 +257,7 @@ public:
 
     static void clone_in_heap(oop src, oop dst, size_t size) {
       // TODO: We don't need clone barriers at the moment.
-      Raw::clone(src, dst, size);
+      Raw::clone_in_heap(src, dst, size);
     }
   };
 

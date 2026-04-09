@@ -1,5 +1,6 @@
 #include "precompiled.hpp"
 #include "mmtkObjectBarrier.hpp"
+#include "mmtkMutator.hpp"
 #include "runtime/interfaceSupport.inline.hpp"
 
 #define __ masm->
@@ -69,14 +70,16 @@ void MMTkObjectBarrierSetAssembler::object_reference_write_post(MacroAssembler* 
     __ mv(c_rarg0, obj);
     __ la(c_rarg1, dst);
     __ mv(c_rarg2, val == noreg ? zr : val);
-    __ call_VM_leaf_base(FN_ADDR(MMTkBarrierSetRuntime::object_reference_write_slow_call), 3);
+    __ la(c_rarg3, Address(xthread, in_bytes(JavaThread::third_party_heap_mutator_offset())));
+    __ call_VM_leaf_base(FN_ADDR(mmtk_object_reference_write_slow), 4);
 
     __ bind(done);
   } else {
     __ mv(c_rarg0, obj);
     __ la(c_rarg1, dst);
     __ mv(c_rarg2, val == noreg ? zr : val);
-    __ call_VM_leaf_base(FN_ADDR(MMTkBarrierSetRuntime::object_reference_write_post_call), 3);
+    __ la(c_rarg3, Address(xthread, in_bytes(JavaThread::third_party_heap_mutator_offset())));
+    __ call_VM_leaf_base(FN_ADDR(mmtk_object_reference_write_post), 4);
   }
   if (dst.base()->is_valid()) {
     __ pop_reg(dst.base());
@@ -92,7 +95,8 @@ void MMTkObjectBarrierSetAssembler::arraycopy_epilogue(MacroAssembler* masm, Dec
   if (is_oop) {
     // in address generate_checkcast_copy, caller tells us to save count
     __ push_reg(saved_regs, sp);
-    __ call_VM_leaf(FN_ADDR(MMTkBarrierSetRuntime::object_reference_array_copy_post_call), zr, dst, count);
+    __ la(c_rarg3, Address(xthread, in_bytes(JavaThread::third_party_heap_mutator_offset())));
+    __ call_VM_leaf(FN_ADDR(mmtk_array_copy_post), zr, dst, count);
     __ pop_reg(saved_regs, sp);
   }
 }
