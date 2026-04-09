@@ -65,7 +65,6 @@ MMTkAllocatorOffsets get_tlab_top_and_end_offsets(AllocatorSelector selector);
 
 class MMTkBarrierSetRuntime: public CHeapObj<mtGC> {
 public:
-  static void object_probable_write_pre_call(void* obj);
   /// Check if the address is a slow-path function.
   virtual bool is_slow_path_call(address call) const {
     return call == CAST_FROM_FN_PTR(address, mmtk_object_reference_write_pre)
@@ -74,7 +73,7 @@ public:
         || call == CAST_FROM_FN_PTR(address, mmtk_array_copy_pre)
         || call == CAST_FROM_FN_PTR(address, mmtk_array_copy_post)
         || call == CAST_FROM_FN_PTR(address, mmtk_load_reference)
-        || call == CAST_FROM_FN_PTR(address, object_probable_write_pre_call);
+        || call == CAST_FROM_FN_PTR(address, mmtk_object_probable_write);
   }
 
   /// Full pre-barrier

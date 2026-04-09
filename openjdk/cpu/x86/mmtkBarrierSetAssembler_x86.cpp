@@ -168,7 +168,9 @@ void MMTkBarrierSetAssembler::generate_c1_runtime_stub_general(StubAssembler* sa
     // the normal barrier slow-path. Instead, we conservatively treat the entire object as modified
     // via object_probable_write, which logs all fields. The field offset will be patched later by
     // the C1 runtime when the class is resolved.
-    __ call_VM_leaf(FN_ADDR(MMTkBarrierSetRuntime::object_probable_write_pre_call), c_rarg0);
+    Address mutator(r15_thread, in_bytes(JavaThread::third_party_heap_mutator_offset()));
+    __ lea(c_rarg1, mutator);
+    __ call_VM_leaf_base(FN_ADDR(mmtk_object_probable_write), 2);
   } else {
     // Load mutator from thread-local storage as the last argument, then call Rust directly.
     Address mutator(r15_thread, in_bytes(JavaThread::third_party_heap_mutator_offset()));

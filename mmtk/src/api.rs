@@ -475,7 +475,7 @@ pub extern "C" fn mmtk_array_copy_post(
 
 /// C2 Slowpath allocation barrier
 #[no_mangle]
-pub extern "C" fn mmtk_object_probable_write(mutator: *mut libc::c_void, obj: ObjectReference) {
+pub extern "C" fn mmtk_object_probable_write(obj: ObjectReference, mutator: *mut libc::c_void) {
     with_mutator!(|mutator| mutator.barrier().object_probable_write(obj));
 }
 

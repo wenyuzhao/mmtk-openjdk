@@ -12,11 +12,11 @@ void MMTkObjectBarrierSetRuntime::object_probable_write(oop new_obj) const {
     if (is_unlog_bit_set(new_obj)) {
       // Only promoted objects will reach here.
       // The duplicated unlog bit check inside slow-path still remains correct.
-      mmtk_object_probable_write((MMTk_Mutator) &Thread::current()->third_party_heap_mutator, (void*) new_obj);
+      mmtk_object_probable_write((void*) new_obj, (MMTk_Mutator) &Thread::current()->third_party_heap_mutator);
     }
   } else {
     // The slow-call will do the unlog bit check again (same as the above fast-path check)
-    mmtk_object_probable_write((MMTk_Mutator) &Thread::current()->third_party_heap_mutator, (void*) new_obj);
+    mmtk_object_probable_write((void*) new_obj, (MMTk_Mutator) &Thread::current()->third_party_heap_mutator);
   }
 }
 

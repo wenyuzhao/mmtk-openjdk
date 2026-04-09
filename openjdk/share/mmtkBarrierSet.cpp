@@ -142,7 +142,3 @@ void MMTkBarrierSet::print_on(outputStream* st) const {
 bool MMTkBarrierSet::is_slow_path_call(address call) {
   return runtime()->is_slow_path_call(call);
 }
-
-void MMTkBarrierSetRuntime::object_probable_write_pre_call(void* ref) {
-  ::mmtk_object_probable_write((MMTk_Mutator) &Thread::current()->third_party_heap_mutator, ref);
-}
