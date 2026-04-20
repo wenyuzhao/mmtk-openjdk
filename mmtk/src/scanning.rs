@@ -26,9 +26,6 @@ extern "C" fn report_slots_and_renew_buffer<S: Slot, F: RootsWorkFactory<S>>(
         // Note: Currently OpenJDKSlot has the same layout as Address.  If the layout changes, we
         // should fix the Rust-to-C interface.
         let buf = unsafe { Vec::<S>::from_raw_parts(ptr as _, length, capacity) };
-        if cfg!(feature = "roots_breakdown") {
-            super::gc_work::record_roots(buf.len());
-        }
         let factory: &mut F = unsafe { &mut *(factory_ptr as *mut F) };
         factory.create_process_roots_work(buf, RootKind::Strong);
     }
@@ -109,11 +106,6 @@ impl<const COMPRESSED: bool> Scanning<OpenJDK<COMPRESSED>> for VMScanning {
         mutators: Vec<VMMutatorThread>,
         mut factory: impl RootsWorkFactory<<OpenJDK<COMPRESSED> as mmtk::vm::VMBinding>::VMSlot>,
     ) {
-        // let t = if cfg!(feature = "roots_breakdown") {
-        //     Some(std::time::SystemTime::now())
-        // } else {
-        //     None
-        // };
         let len = mutators.len();
         let ptr = mutators.as_ptr();
         unsafe {
@@ -123,10 +115,6 @@ impl<const COMPRESSED: bool> Scanning<OpenJDK<COMPRESSED>> for VMScanning {
                 len,
             );
         }
-        // if cfg!(feature = "roots_breakdown") {
-        //     let ms = t.unwrap().elapsed().unwrap().as_micros() as f32 / 1000f32;
-        //     eprintln!(" - ScanThreadRoots ({:.3}ms)", ms);
-        // }
     }
 
     fn scan_vm_specific_roots(

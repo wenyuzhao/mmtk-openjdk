@@ -54,7 +54,6 @@ built = { version = "0.7.7", features = ["git2"] }
 
 [features]
 default = []
-release_debug_assertions = []
 mmtk_extreme_assertions = ["mmtk/extreme_assertions"]
 nogc_lock_free = ["mmtk/nogc_lock_free"]
 nogc_no_zeroing = ["mmtk/nogc_no_zeroing"]
@@ -62,10 +61,6 @@ nogc_no_zeroing = ["mmtk/nogc_no_zeroing"]
 # See README.
 vo_bit = ["mmtk/vo_bit"]
 no_fast_alloc = []
-roots_breakdown = []
-same_stw_and_conc_threads = []
-lxr_6_conc_workers = []
-lxr_12_conc_workers = []
 g3_compatibilities = []
 
 # Place the mark bit in the header of objects instead of on the side.
@@ -92,25 +87,7 @@ stickyimmix = []
 markcompact = []
 
 sanity = ["mmtk/sanity"]
-barrier_measurement = ["mmtk/barrier_measurement"]
-yield_and_roots_timer = ["mmtk/yield_and_roots_timer"]
-satb_timer = ["mmtk/satb_timer"]
 instrumentation = ["mmtk/instrumentation", "no_fast_alloc"]
 log_gc = ["mmtk/log_gc"]
 log_stages = ["mmtk/log_stages"]
 log_work_packets = ["mmtk/log_work_packets"]
-object_size_distribution = ["mmtk/object_size_distribution"]
-discontig_space = []
-
-# Compressed pointer experiments
-force_narrow_oop_mode = []
-narrow_oop_mode_32bit = ["force_narrow_oop_mode"]
-narrow_oop_mode_shift = ["force_narrow_oop_mode"]
-narrow_oop_mode_base = ["force_narrow_oop_mode"]
-narrow_oop_mode_base_and_shift = ["force_narrow_oop_mode"]
-
-field_barrier_no_eager_branch = []
-field_barrier_no_arraycopy = []
-field_barrier_no_arraycopy_slow = []
-field_barrier_no_c2_slow_call = []
-field_barrier_no_c2_rust_call = []

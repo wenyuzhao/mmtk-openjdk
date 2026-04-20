@@ -33,12 +33,7 @@ extern const uintptr_t VO_BIT_ADDRESS;
 extern const int DISABLE_ALLOCATION_FAST_PATH;
 extern const uintptr_t IMMIX_ALLOCATOR_SIZE;
 extern uint8_t RC_ENABLED;
-extern uint8_t REQUIRES_WEAK_HANDLE_BARRIER;
-extern uint8_t FIELD_BARRIER_NO_EAGER_BRANCH;
-extern uint8_t FIELD_BARRIER_NO_ARRAYCOPY;
-extern uint8_t FIELD_BARRIER_NO_ARRAYCOPY_SLOW;
-extern uint8_t FIELD_BARRIER_NO_C2_SLOW_CALL;
-extern uint8_t FIELD_BARRIER_NO_C2_RUST_CALL;
+extern uint8_t REQUIRES_WEAK_HANDLE_BARRIER; 
 
 inline bool disable_fast_alloc() {
     return DISABLE_ALLOCATION_FAST_PATH != 0;

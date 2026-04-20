@@ -189,9 +189,6 @@ pub extern "C" fn alloc(
     offset: usize,
     allocator: AllocationSemantics,
 ) -> Address {
-    if cfg!(feature = "object_size_distribution") {
-        crate::record_alloc(size);
-    }
     with_mutator!(|mutator| memory_manager::alloc(mutator, size, align, offset, allocator))
 }
 
@@ -368,16 +365,7 @@ pub extern "C" fn mmtk_builder_set_threads(value: usize) {
 #[no_mangle]
 pub extern "C" fn mmtk_builder_set_conc_threads(value: usize) {
     let mut builder = BUILDER.lock().unwrap();
-    if cfg!(feature = "same_stw_and_conc_threads") {
-        let threads = *builder.options.threads;
-        builder.options.conc_threads.set(threads);
-    } else if cfg!(feature = "lxr_6_conc_workers") {
-        builder.options.conc_threads.set(6);
-    } else if cfg!(feature = "lxr_12_conc_workers") {
-        builder.options.conc_threads.set(12);
-    } else {
-        builder.options.conc_threads.set(value);
-    }
+    builder.options.conc_threads.set(value);
 }
 
 /// Pass hotspot `UseTransparentHugePages` flag to mmtk
