@@ -587,11 +587,7 @@ void MMTkHeap::complete_cleaning(bool purged_classes) {
   _workers->run_task(&unlink_task);
 }
 
-void MMTkHeap::register_new_weak_handle(oop* handle) {
-  if (REQUIRES_WEAK_HANDLE_BARRIER) {
-    mmtk_register_new_weak_handle((void*) handle);
-  }
-}
+void MMTkHeap::register_new_weak_handle(oop* handle) {}
 
 bool MMTkHeap::requires_barriers(stackChunkOop obj) const {
   ShouldNotReachHere();

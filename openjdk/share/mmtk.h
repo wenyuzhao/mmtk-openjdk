@@ -33,12 +33,6 @@ extern const uintptr_t VO_BIT_ADDRESS;
 extern const int DISABLE_ALLOCATION_FAST_PATH;
 extern const uintptr_t IMMIX_ALLOCATOR_SIZE;
 extern uint8_t RC_ENABLED;
-extern uint8_t REQUIRES_WEAK_HANDLE_BARRIER;
-extern uint8_t FIELD_BARRIER_NO_EAGER_BRANCH;
-extern uint8_t FIELD_BARRIER_NO_ARRAYCOPY;
-extern uint8_t FIELD_BARRIER_NO_ARRAYCOPY_SLOW;
-extern uint8_t FIELD_BARRIER_NO_C2_SLOW_CALL;
-extern uint8_t FIELD_BARRIER_NO_C2_RUST_CALL;
 extern uint8_t CLASS_UNLOADING_ENABLED;
 
 inline bool disable_fast_alloc() {
@@ -93,8 +87,6 @@ extern void mmtk_array_copy_pre(void* src, void* dst, size_t count, MMTk_Mutator
 /// Full array-copy post-barrier
 extern void mmtk_array_copy_post(MMTk_Mutator mutator, void* src, void* dst, size_t count);
 
-extern void mmtk_object_reference_clone_pre(MMTk_Mutator mutator, void* obj);
-
 /// C2 slowpath allocation barrier
 extern void mmtk_object_probable_write(MMTk_Mutator mutator, void* obj);
 
@@ -146,8 +138,6 @@ extern void* mmtk_get_forwarded_ref(void* object);
 extern size_t mmtk_add_nmethod_oop(void* object);
 extern size_t mmtk_register_nmethod(void* nm);
 extern size_t mmtk_unregister_nmethod(void* nm);
-
-extern size_t mmtk_register_new_weak_handle(void* entry);
 
 extern size_t mmtk_verbose();
 

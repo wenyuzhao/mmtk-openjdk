@@ -17,8 +17,11 @@ use mmtk::MMTK;
 fn set_referent<const COMPRESSED: bool>(reff: ObjectReference, referent: Option<ObjectReference>) {
     let oop = Oop::from(reff);
     let slot = InstanceRefKlass::referent_address::<COMPRESSED>(oop);
-    mmtk::plan::lxr::record_slot_for_validation(slot, referent);
-    slot.store(referent)
+    if let Some(o) = referent {
+        slot.store(o);
+    } else {
+        slot.store_null();
+    }
 }
 
 fn get_referent<const COMPRESSED: bool>(object: ObjectReference) -> Option<ObjectReference> {
@@ -42,8 +45,11 @@ fn set_next_reference<const COMPRESSED: bool>(
     next: Option<ObjectReference>,
 ) {
     let slot = get_next_reference_slot::<COMPRESSED>(object);
-    mmtk::plan::lxr::record_slot_for_validation(slot, next);
-    slot.store(next)
+    if let Some(o) = next {
+        slot.store(o);
+    } else {
+        slot.store_null();
+    }
 }
 
 pub struct VMReferenceGlue {}

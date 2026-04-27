@@ -37,25 +37,13 @@ pub fn use_compressed_oops() -> bool {
 
 /// Set compressed pointer base and shift based on heap range
 pub fn initialize_compressed_oops_base_and_shift() {
-    let heap_start = mmtk::memory_manager::starting_heap_address().as_usize();
     let heap_end = mmtk::memory_manager::last_heap_address().as_usize();
-    if cfg!(feature = "force_narrow_oop_mode") {
-        println!("heap_start: 0x{:x}", heap_start);
-        println!("heap_end: 0x{:x}", heap_end);
-    }
     if heap_end <= (4usize << 30) {
         BASE.store(Address::ZERO, Ordering::Relaxed);
         SHIFT.store(0, Ordering::Relaxed);
     } else if heap_end <= (32usize << 30) {
         BASE.store(Address::ZERO, Ordering::Relaxed);
         SHIFT.store(3, Ordering::Relaxed);
-    } else if cfg!(feature = "narrow_oop_mode_base") && (heap_end - heap_start) <= (4usize << 30) {
-        // set heap base as HEAP_START - 4096, to make sure null pointer value is not conflict with HEAP_START
-        BASE.store(
-            mmtk::memory_manager::starting_heap_address() - 4096,
-            Ordering::Relaxed,
-        );
-        SHIFT.store(0, Ordering::Relaxed);
     } else {
         // set heap base as HEAP_START - 4096, to make sure null pointer value does not conflict with HEAP_START
         BASE.store(
@@ -142,10 +130,7 @@ impl<const COMPRESSED: bool> OpenJDKSlot<COMPRESSED> {
     }
 
     /// encode an object pointer to its u32 compressed form
-    fn compress(o: Option<ObjectReference>) -> u32 {
-        let Some(o) = o else {
-            return 0;
-        };
+    fn compress(o: ObjectReference) -> u32 {
         ((o.to_raw_address() - BASE.load(Ordering::Relaxed)) >> SHIFT.load(Ordering::Relaxed))
             as u32
     }
@@ -182,58 +167,8 @@ impl<const COMPRESSED: bool> OpenJDKSlot<COMPRESSED> {
             unsafe { self.addr.store(0) }
         }
     }
-}
 
-impl<const COMPRESSED: bool> Slot for OpenJDKSlot<COMPRESSED> {
-    fn load(&self) -> Option<ObjectReference> {
-        if cfg!(any(target_arch = "x86", target_arch = "x86_64")) {
-            if COMPRESSED {
-                if self.is_compressed() {
-                    Self::decompress(self.x86_read_unaligned::<u32, true>())
-                } else {
-                    let addr = self.x86_read_unaligned::<Address, true>();
-                    ObjectReference::from_raw_address(addr)
-                }
-            } else {
-                let addr = self.x86_read_unaligned::<Address, false>();
-                ObjectReference::from_raw_address(addr)
-            }
-        } else {
-            debug_assert!(!COMPRESSED);
-            unsafe { self.addr.load() }
-        }
-    }
-
-    fn store(&self, object: Option<ObjectReference>) {
-        if cfg!(any(target_arch = "x86", target_arch = "x86_64")) {
-            if COMPRESSED {
-                if self.is_compressed() {
-                    self.x86_write_unaligned::<u32, true>(Self::compress(object))
-                } else {
-                    self.x86_write_unaligned::<Option<ObjectReference>, true>(object)
-                }
-            } else {
-                self.x86_write_unaligned::<Option<ObjectReference>, false>(object)
-            }
-        } else {
-            debug_assert!(!COMPRESSED);
-            unsafe { self.addr.store(object) }
-        }
-    }
-
-    fn to_address(&self) -> Address {
-        self.untagged_address()
-    }
-
-    fn raw_address(&self) -> Address {
-        self.addr
-    }
-
-    fn from_address(a: Address) -> Self {
-        Self { addr: a }
-    }
-
-    fn compare_exchange(
+    pub fn compare_exchange(
         &self,
         old_object: Option<ObjectReference>,
         new_object: Option<ObjectReference>,
@@ -242,8 +177,16 @@ impl<const COMPRESSED: bool> Slot for OpenJDKSlot<COMPRESSED> {
     ) -> Result<Option<ObjectReference>, Option<ObjectReference>> {
         if COMPRESSED {
             if self.is_compressed() {
-                let old_value = Self::compress(old_object);
-                let new_value = Self::compress(new_object);
+                let old_value = if let Some(o) = old_object {
+                    Self::compress(o)
+                } else {
+                    0
+                };
+                let new_value = if let Some(o) = new_object {
+                    Self::compress(o)
+                } else {
+                    0
+                };
                 let slot = self.untagged_address();
                 unsafe {
                     match slot.compare_exchange::<AtomicU32>(old_value, new_value, success, failure)
@@ -286,6 +229,56 @@ impl<const COMPRESSED: bool> Slot for OpenJDKSlot<COMPRESSED> {
                 }
             }
         }
+    }
+}
+
+impl<const COMPRESSED: bool> Slot for OpenJDKSlot<COMPRESSED> {
+    fn load(&self) -> Option<ObjectReference> {
+        if cfg!(any(target_arch = "x86", target_arch = "x86_64")) {
+            if COMPRESSED {
+                if self.is_compressed() {
+                    Self::decompress(self.x86_read_unaligned::<u32, true>())
+                } else {
+                    let addr = self.x86_read_unaligned::<Address, true>();
+                    ObjectReference::from_raw_address(addr)
+                }
+            } else {
+                let addr = self.x86_read_unaligned::<Address, false>();
+                ObjectReference::from_raw_address(addr)
+            }
+        } else {
+            debug_assert!(!COMPRESSED);
+            unsafe { self.addr.load() }
+        }
+    }
+
+    fn store(&self, object: ObjectReference) {
+        if cfg!(any(target_arch = "x86", target_arch = "x86_64")) {
+            if COMPRESSED {
+                if self.is_compressed() {
+                    self.x86_write_unaligned::<u32, true>(Self::compress(object))
+                } else {
+                    self.x86_write_unaligned::<ObjectReference, true>(object)
+                }
+            } else {
+                self.x86_write_unaligned::<ObjectReference, false>(object)
+            }
+        } else {
+            debug_assert!(!COMPRESSED);
+            unsafe { self.addr.store(object) }
+        }
+    }
+
+    fn to_address(&self) -> Address {
+        self.untagged_address()
+    }
+
+    fn raw_address(&self) -> Address {
+        self.addr
+    }
+
+    fn from_address(a: Address) -> Self {
+        Self { addr: a }
     }
 }
 

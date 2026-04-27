@@ -180,33 +180,17 @@ pub static FREE_LIST_ALLOCATOR_SIZE: uintptr_t =
     std::mem::size_of::<mmtk::util::alloc::FreeListAllocator<OpenJDK<false>>>();
 
 #[no_mangle]
-pub static DISABLE_ALLOCATION_FAST_PATH: i32 =
-    (cfg!(feature = "no_fast_alloc") || cfg!(feature = "object_size_distribution")) as _;
+pub static DISABLE_ALLOCATION_FAST_PATH: i32 = cfg!(feature = "no_fast_alloc") as _;
 
 #[no_mangle]
 pub static IMMIX_ALLOCATOR_SIZE: uintptr_t =
     std::mem::size_of::<mmtk::util::alloc::ImmixAllocator<OpenJDK<false>>>();
 
 #[no_mangle]
-pub static FIELD_BARRIER_NO_EAGER_BRANCH: u8 = cfg!(feature = "field_barrier_no_eager_branch") as _;
-#[no_mangle]
-pub static FIELD_BARRIER_NO_ARRAYCOPY: u8 = cfg!(feature = "field_barrier_no_arraycopy") as _;
-#[no_mangle]
-pub static FIELD_BARRIER_NO_ARRAYCOPY_SLOW: u8 =
-    cfg!(feature = "field_barrier_no_arraycopy_slow") as _;
-#[no_mangle]
-pub static FIELD_BARRIER_NO_C2_SLOW_CALL: u8 = cfg!(feature = "field_barrier_no_c2_slow_call") as _;
-#[no_mangle]
-pub static FIELD_BARRIER_NO_C2_RUST_CALL: u8 = cfg!(feature = "field_barrier_no_c2_rust_call") as _;
-
-#[no_mangle]
 pub static mut CONCURRENT_MARKING_ACTIVE: u8 = 0;
 
 #[no_mangle]
 pub static mut RC_ENABLED: u8 = 0;
-
-#[no_mangle]
-pub static mut REQUIRES_WEAK_HANDLE_BARRIER: u8 = 0;
 
 #[no_mangle]
 pub static mut CLASS_UNLOADING_ENABLED: u8 = 0;
@@ -249,17 +233,13 @@ lazy_static! {
                 .get_plan()
                 .downcast_ref::<LXR<OpenJDK<true>>>()
                 .is_some() as _;
-            REQUIRES_WEAK_HANDLE_BARRIER = RC_ENABLED;
         }
         *ret
     };
     pub static ref SINGLETON_UNCOMPRESSED: MMTK<OpenJDK<false>> = {
         assert!(!use_compressed_oops());
-        let mut builder = BUILDER.lock().unwrap();
+        let builder = BUILDER.lock().unwrap();
         assert!(!MMTK_INITIALIZED.load(Ordering::Relaxed));
-        if cfg!(feature = "discontig_space") {
-            set_no_compressed_pointer_discontig_vm_layout(&mut builder);
-        }
         let ret = mmtk::memory_manager::mmtk_init(&builder);
         MMTK_INITIALIZED.store(true, std::sync::atomic::Ordering::SeqCst);
         unsafe {
@@ -267,7 +247,6 @@ lazy_static! {
                 .get_plan()
                 .downcast_ref::<LXR<OpenJDK<false>>>()
                 .is_some() as _;
-            REQUIRES_WEAK_HANDLE_BARRIER = RC_ENABLED;
         }
         *ret
     };
@@ -292,105 +271,15 @@ pub static MMTK_MARK_COMPACT_HEADER_RESERVED_IN_BYTES: usize =
     mmtk::util::alloc::MarkCompactAllocator::<OpenJDK<false>>::HEADER_RESERVED_IN_BYTES;
 
 lazy_static! {
-    /// A global storage for all the cached CodeCache root pointers
+    /// A global storage for all the cached CodeCache roots added since the last GC.
     static ref NURSERY_CODE_CACHE_ROOTS: Mutex<HashMap<Address, Vec<Address>>> = Mutex::new(HashMap::new());
+
+    /// A global storage for all the cached CodeCache roots added before the last GC.
     static ref MATURE_CODE_CACHE_ROOTS: Mutex<HashMap<Address, Vec<Address>>> = Mutex::new(HashMap::new());
     static ref NURSERY_WEAK_HANDLE_ROOTS: Mutex<Vec<Address>> = Mutex::new(Vec::new());
 }
 
-lazy_static! {
-    static ref OBJ_COUNT: Mutex<HashMap<usize, (usize, usize)>> = Mutex::new(HashMap::new());
-}
-
-fn record_alloc(size: usize) {
-    assert!(cfg!(feature = "object_size_distribution"));
-    let mut counts = OBJ_COUNT.lock().unwrap();
-    counts
-        .entry(size.next_power_of_two())
-        .and_modify(|x| {
-            x.0 += 1;
-            x.1 += size;
-        })
-        .or_insert((1, size));
-}
-
-extern "C" fn dump_and_reset_obj_dist() {
-    assert!(cfg!(feature = "object_size_distribution"));
-    mmtk::dump_and_reset_obj_dist("Dynamic", &mut OBJ_COUNT.lock().unwrap());
-}
-
 fn set_compressed_pointer_vm_layout(builder: &mut MMTKBuilder) {
-    let max_heap_size = builder.options.gc_trigger.max_heap_size();
-    assert!(
-        max_heap_size <= (32usize << LOG_BYTES_IN_GBYTE),
-        "Heap size is larger than 32 GB"
-    );
-    let rounded_heap_size = (max_heap_size + (BYTES_IN_CHUNK - 1)) & !(BYTES_IN_CHUNK - 1);
-    let mut start: usize = 0x4000_0000; // block lowest 1G
-    let (end, mut small_chunk_space_size) = if cfg!(feature = "force_narrow_oop_mode") {
-        assert!(rounded_heap_size <= (2 << 30));
-        let heap = rounded_heap_size;
-        if cfg!(feature = "narrow_oop_mode_32bit") {
-            let end = 4usize << 30;
-            let small_space = 2 << 30;
-            (end, small_space)
-        } else if cfg!(feature = "narrow_oop_mode_shift") {
-            let end = 32usize << 30;
-            let small_space = usize::min(heap * 3 / 2, 29 << 30);
-            (end, small_space)
-        } else if cfg!(feature = "narrow_oop_mode_base") {
-            // start = 0x200_0000_0000;
-            // let end = start + ((4usize << 30) - BYTES_IN_CHUNK);
-            // let small_space = 2 << 30;
-            // (end, small_space)
-            unreachable!()
-        } else if cfg!(feature = "narrow_oop_mode_base_and_shift") {
-            start = 0x200_0000_0000;
-            let end = start + 0x8_0000_0000 - BYTES_IN_CHUNK;
-            let small_space = usize::min(heap * 3 / 2, 30 << 30);
-            (end, small_space)
-        } else {
-            unreachable!()
-        }
-    } else {
-        match rounded_heap_size {
-            // heap <= 2G; virtual = 3G; max-small-space=2G; min-small-space=1.5G
-            heap if heap <= 2 << 30 => {
-                let end = 4usize << 30;
-                let small_space = 2 << 30;
-                (end, small_space)
-            }
-            // heap <= 29G; virtual = 31G; max-small-space=29G;
-            heap if heap <= 29 << 30 => {
-                let end = 32usize << 30;
-                let small_space = usize::min(heap * 3 / 2, 29 << 30);
-                (end, small_space)
-            }
-            // heap > 29G; virtual = 32G - 1chunk; max-small-space=30G; start=0x200_0000_0000
-            heap => {
-                // A workaround to avoid address conflict with the OpenJDK
-                // MetaSpace, which may start from 0x8_0000_0000
-                start = 0x200_0000_0000;
-                let end = start + 0x8_0000_0000 - BYTES_IN_CHUNK;
-                let small_space = usize::min(heap * 3 / 2, 30 << 30);
-                (end, small_space)
-            }
-        }
-    };
-    small_chunk_space_size =
-        (small_chunk_space_size + (BYTES_IN_CHUNK - 1)) & !(BYTES_IN_CHUNK - 1);
-    let constants = VMLayout {
-        log_address_space: 35,
-        heap_start: conversions::chunk_align_down(unsafe { Address::from_usize(start) }),
-        heap_end: conversions::chunk_align_up(unsafe { Address::from_usize(end) }),
-        log_space_extent: 31,
-        force_use_contiguous_spaces: false,
-        small_chunk_space_size: Some(small_chunk_space_size),
-    };
-    builder.set_vm_layout(constants);
-}
-
-fn set_no_compressed_pointer_discontig_vm_layout(builder: &mut MMTKBuilder) {
     let max_heap_size = builder.options.gc_trigger.max_heap_size();
     assert!(
         max_heap_size <= (32usize << LOG_BYTES_IN_GBYTE),

@@ -1,4 +1,3 @@
-use crate::abi::Oop;
 use crate::slots::OpenJDKSlot;
 use crate::OpenJDK;
 use crate::OpenJDK_Upcalls;
@@ -189,9 +188,6 @@ pub extern "C" fn alloc(
     offset: usize,
     allocator: AllocationSemantics,
 ) -> Address {
-    if cfg!(feature = "object_size_distribution") {
-        crate::record_alloc(size);
-    }
     with_mutator!(|mutator| memory_manager::alloc(mutator, size, align, offset, allocator))
 }
 
@@ -368,16 +364,7 @@ pub extern "C" fn mmtk_builder_set_threads(value: usize) {
 #[no_mangle]
 pub extern "C" fn mmtk_builder_set_conc_threads(value: usize) {
     let mut builder = BUILDER.lock().unwrap();
-    if cfg!(feature = "same_stw_and_conc_threads") {
-        let threads = *builder.options.threads;
-        builder.options.conc_threads.set(threads);
-    } else if cfg!(feature = "lxr_6_conc_workers") {
-        builder.options.conc_threads.set(6);
-    } else if cfg!(feature = "lxr_12_conc_workers") {
-        builder.options.conc_threads.set(12);
-    } else {
-        builder.options.conc_threads.set(value);
-    }
+    builder.options.conc_threads.set(value);
 }
 
 /// Pass hotspot `UseTransparentHugePages` flag to mmtk
@@ -433,26 +420,18 @@ pub extern "C" fn mmtk_load_reference(o: ObjectReference, mutator: *mut libc::c_
     with_mutator!(|mutator| mutator.barrier().load_weak_reference(o))
 }
 
-#[no_mangle]
-pub extern "C" fn mmtk_object_reference_clone_pre(
-    mutator: *mut libc::c_void,
-    obj: ObjectReference,
-) {
-    with_mutator!(|mutator| mutator.barrier().object_reference_clone_pre(obj))
-}
-
 /// Full pre barrier
 #[no_mangle]
 pub extern "C" fn mmtk_object_reference_write_pre(
     mutator: *mut libc::c_void,
-    src: NullableObjectReference,
+    src: ObjectReference,
     slot: Address,
     target: NullableObjectReference,
 ) {
     with_mutator!(|mutator| {
         mutator
             .barrier()
-            .object_reference_write_pre(src.into(), slot.into(), target.into());
+            .object_reference_write_pre(src, slot.into(), target.into());
     })
 }
 
@@ -460,21 +439,21 @@ pub extern "C" fn mmtk_object_reference_write_pre(
 #[no_mangle]
 pub extern "C" fn mmtk_object_reference_write_post(
     mutator: *mut libc::c_void,
-    src: NullableObjectReference,
+    src: ObjectReference,
     slot: Address,
     target: NullableObjectReference,
 ) {
     with_mutator!(|mutator| {
         mutator
             .barrier()
-            .object_reference_write_post(src.into(), slot.into(), target.into());
+            .object_reference_write_post(src, slot.into(), target.into());
     })
 }
 
 /// Barrier slow-path call
 #[no_mangle]
 pub extern "C" fn mmtk_object_reference_write_slow(
-    src: NullableObjectReference,
+    src: ObjectReference,
     slot: Address,
     target: NullableObjectReference,
     mutator: *mut libc::c_void,
@@ -482,7 +461,7 @@ pub extern "C" fn mmtk_object_reference_write_slow(
     with_mutator!(|mutator| {
         mutator
             .barrier()
-            .object_reference_write_slow(src.into(), slot.into(), target.into());
+            .object_reference_write_slow(src, slot.into(), target.into());
     })
 }
 
@@ -566,7 +545,7 @@ pub extern "C" fn mmtk_get_forwarded_ref(
 ) -> NullableObjectReference {
     let o: Option<ObjectReference> = object.into();
     let Some(o) = o else {
-        return ObjectReference::NULL.into();
+        return None.into();
     };
     match o.get_forwarded_object2() {
         Some(o) => Some(o).into(),
@@ -620,14 +599,4 @@ pub extern "C" fn mmtk_unregister_nmethod(nm: Address) {
 #[no_mangle]
 pub extern "C" fn mmtk_verbose() -> usize {
     with_singleton!(|singleton| *singleton.options.verbose)
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn mmtk_register_new_weak_handle(oop: *const Oop) {
-    // let addr = if crate::use_compressed_oops() {
-    //     Address::from_usize(oop as usize | (1 << 63))
-    // } else {
-    //     Address::from_ptr(oop)
-    // };
-    // crate::NURSERY_WEAK_HANDLE_ROOTS.lock().unwrap().push(addr);
 }
